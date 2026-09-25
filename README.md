@@ -65,7 +65,7 @@ Wissel bovenaan via **Demo-rol** tussen *Coördinator (Omgeving)*, *Partner: Lid
 
 ## Testversie online (functioneel, gratis)
 
-Naast het prototype bestaat er een **werkende testversie**. Die gebruikt dezelfde schermen, maar met echte gegevens:
+Naast het prototype bestaat er een **werkende testversie** op **https://tattoovabien.github.io/eiwitshift-kalender/**. Die gebruikt dezelfde schermen, maar met echte gegevens:
 
 - **Inloggen met een code per e-mail**, zonder wachtwoord. Wie op de toegangslijst staat, komt meteen binnen. Anderen vragen toegang aan en een coördinator keurt goed (*Dashboard → Toegang*).
 - **Iedereen ziet dezelfde gegevens, live bijgewerkt.**
@@ -78,7 +78,7 @@ Naast het prototype bestaat er een **werkende testversie**. Die gebruikt dezelfd
 | Onderdeel | Dienst | Opmerking |
 |---|---|---|
 | Database + login | Supabase, regio Frankfurt (EU) | Gratis project **pauzeert na 1 week zonder gebruik**: open dan het Supabase-dashboard en klik op *Restore*. |
-| E-mails | Brevo (gratis, 300 per dag) | Vertrekt vanaf je Gmail-adres via Brevo (@brevosend.com). Test vooraf of mails niet in de spam belanden. |
+| E-mails | Brevo (gratis, 300 per dag) | Vertrekt vanaf je Gmail-adres via Brevo (@brevosend.com). Test vooraf of mails niet in de spam belanden. In Brevo moet *Security → Authorized IPs → blokkeren van onbekende IP-adressen* uit staan, anders weigert Brevo de mails van Supabase. |
 | Website | GitHub Pages | Publieke repository. Er staan geen geheimen in: de "anon key" is bedoeld om publiek te zijn, de toegangsregels zitten in de database. |
 
 ### Beheer
