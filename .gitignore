@@ -1,0 +1,8 @@
+node_modules/
+dist/
+Eiwitshift-kalender-prototype.html
+.env.local
+.env.*.local
+supabase/.temp/
+supabase/.branches/
+supabase/functions/_shared/app/

@@ -1,0 +1,37 @@
+{
+  "name": "eiwitshift-kalender",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:live": "vite --mode live",
+    "build": "tsc --noEmit && vite build && node scripts/copy-build.mjs",
+    "build:live": "tsc --noEmit && vite build --mode live",
+    "preview": "vite preview",
+    "test:db": "tsx scripts/test-db.ts",
+    "seed:sql": "tsx scripts/gen-seed-sql.ts",
+    "functions:sync": "node scripts/sync-shared.mjs",
+    "functions:deploy": "npm run functions:sync && supabase functions deploy notify --no-verify-jwt && supabase functions deploy feed --no-verify-jwt && supabase functions deploy digest --no-verify-jwt",
+    "deploy:site": "npm run build:live && node scripts/deploy-pages.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.1",
+    "lucide-react": "^1.48.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "supabase": "^2.117.0",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vite-plugin-singlefile": "^2.3.3"
+  }
+}

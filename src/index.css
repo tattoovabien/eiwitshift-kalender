@@ -1,0 +1,146 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+  /* One calm green accent. 700 on white = 5.5:1, 800 on white = 7.6:1 (WCAG AA/AAA). */
+  --color-brand-50: #ecfdf3;
+  --color-brand-100: #d1fae1;
+  --color-brand-200: #a6f0c6;
+  --color-brand-300: #6ddfa5;
+  --color-brand-500: #1fa56a;
+  --color-brand-600: #138a57;
+  --color-brand-700: #0f6f47;
+  --color-brand-800: #0e573a;
+  --color-brand-900: #0c4731;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-white text-gray-900 antialiased;
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-brand-600);
+    outline-offset: 2px;
+  }
+  button,
+  select,
+  [role='button'] {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@utility btn {
+  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors disabled:opacity-50;
+}
+@utility btn-primary {
+  @apply btn bg-brand-700 text-white hover:bg-brand-800;
+}
+@utility btn-secondary {
+  @apply btn border border-gray-300 bg-white text-gray-800 hover:bg-gray-50;
+}
+@utility btn-ghost {
+  @apply btn text-gray-700 hover:bg-gray-100;
+}
+@utility btn-soft {
+  @apply btn bg-brand-50 text-brand-800 hover:bg-brand-100;
+}
+@utility btn-danger {
+  @apply btn border border-red-200 bg-white text-red-700 hover:bg-red-50;
+}
+@utility icon-btn {
+  @apply inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-gray-700 hover:bg-gray-100;
+}
+@utility field-label {
+  @apply mb-1.5 block text-sm font-semibold text-gray-800;
+}
+@utility input {
+  @apply block min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-base text-gray-900 placeholder:text-gray-500 focus:border-brand-600 focus:ring-2 focus:ring-brand-200 focus:outline-none sm:text-sm;
+}
+@utility select {
+  @apply input appearance-none pr-9;
+  background-size: 1.1rem;
+  background-position: right 0.6rem center;
+  background-repeat: no-repeat;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234b5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+@utility card {
+  @apply rounded-xl border border-gray-200 bg-white;
+}
+@utility chip {
+  @apply inline-flex min-h-10 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium whitespace-nowrap transition-colors;
+}
+@utility chip-off {
+  @apply chip border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50;
+}
+@utility chip-on {
+  @apply chip border-brand-700 bg-brand-700 text-white hover:bg-brand-800;
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.anim-slide-in {
+  animation: slide-in 0.22s ease-out;
+}
+.anim-fade-in {
+  animation: fade-in 0.18s ease-out;
+}
+.anim-pop-in {
+  animation: pop-in 0.2s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .anim-slide-in,
+  .anim-fade-in,
+  .anim-pop-in {
+    animation: none;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.bar-unsure {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.55) 0 5px,
+    transparent 5px 10px
+  );
+}

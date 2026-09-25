@@ -1,0 +1,13 @@
+project_id = "eiwitshift-kalender"
+
+# Called by the database and by calendar apps, which cannot log in.
+[functions.notify]
+verify_jwt = false
+
+[functions.feed]
+verify_jwt = false
+
+# Only for logged-in coordinators: checked inside the function (the platform's JWT check
+# does not work with the new publishable keys).
+[functions.digest]
+verify_jwt = false
