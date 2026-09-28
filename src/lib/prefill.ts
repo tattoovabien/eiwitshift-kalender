@@ -1,7 +1,7 @@
-// SIMULATED "AI reads the page". Nothing is fetched: we only look at the link text
-// itself (words and dates in the URL). The real version would send the page to an AI
-// model and let it extract title, type, dates, target group, …
-import type { MomentType, TargetGroup } from '../types';
+// Prefill from the link TEXT only (words and dates in the URL). Nothing is fetched.
+// Used by the offline prototype (simulated "AI") and as a fallback in the live version when
+// the page itself cannot be read. The real page reading lives in pageExtract.ts.
+import type { Focus, MomentType, TargetGroup } from '../types';
 import { addMonths, monthKey, todayISO } from './dates';
 
 export const DEMO_LINK = 'https://www.proveg.example/nl/evenementen/kookworkshop-plantaardig-op-kot-4-maart-2027';
@@ -9,16 +9,21 @@ export const DEMO_LINK = 'https://www.proveg.example/nl/evenementen/kookworkshop
 export interface PrefillResult {
   title: string;
   type: MomentType;
+  /** ISO date; for dateUnsure only the month counts (yyyy-mm-01). */
   startDate: string;
   endDate?: string;
   dateUnsure: boolean;
+  unsureNote?: string;
   targetGroup?: TargetGroup;
+  focus?: Focus;
+  region?: string;
+  free?: boolean;
   organiserGuess?: string;
   description?: string;
   foundDate: boolean;
 }
 
-const MONTHS: Record<string, number> = {
+export const MONTHS: Record<string, number> = {
   januari: 1, jan: 1, january: 1,
   februari: 2, feb: 2, february: 2,
   maart: 3, mrt: 3, march: 3, mar: 3,
@@ -33,17 +38,18 @@ const MONTHS: Record<string, number> = {
   december: 12, dec: 12,
 };
 
-const TYPE_HINTS: [RegExp, MomentType][] = [
+// Tested against slug-like text (words joined by "-"), so (^|-)…(-|$) means "a whole word".
+export const TYPE_HINTS: [RegExp, MomentType][] = [
   [/webinar|online-sessie|livestream/, 'Webinar'],
-  [/workshop|kookles|kookdemo|studiedag|masterclass|opleiding|training/, 'Workshop'],
-  [/persbericht|press|pers-/, 'Persbericht'],
-  [/publicatie|rapport|report|studie|superlijst|gids/, 'Publicatie'],
-  [/campagne|campaign|actie|challenge|week-van|maand/, 'Campagne'],
+  [/workshop|kookles|kookdemo|kookcursus|studiedag|masterclass|opleiding|(^|-)training(-|$)/, 'Workshop'],
+  [/persbericht|(^|-)press(-|$)|(^|-)pers(-|$)/, 'Persbericht'],
+  [/publicatie|rapport|(^|-)report(-|$)|(^|-)studie(-|$)|superlijst|(^|-)gids(-|$)|brochure/, 'Publicatie'],
+  [/campagne|campaign|(^|-)actie(-|$)|actieweek|challenge|week-van|(^|-)maand(-|$)/, 'Campagne'],
   [/themadag|world-.*-day|dag-van/, 'Themadag'],
-  [/event|evenement|festival|congres|forum|beurs|symposium|markt|conferentie/, 'Event'],
+  [/(^|-)event|evenement|festival|congres|forum|beurs|symposium|(^|-)markt(-|$)|conferentie/, 'Event'],
 ];
 
-const AUDIENCE_HINTS: [RegExp, TargetGroup][] = [
+export const AUDIENCE_HINTS: [RegExp, TargetGroup][] = [
   [/student|kot|campus|hogeschool|universiteit|unief/, 'Hoger onderwijs'],
   [/chef|grootkeuken|horeca|catering|foodservice/, 'Chefs & grootkeukens'],
   [/zorg|ziekenhuis|dietist|diëtist|woonzorg/, 'Zorg'],
@@ -52,7 +58,7 @@ const AUDIENCE_HINTS: [RegExp, TargetGroup][] = [
   [/professional|b2b|sector|beleid/, 'Professionals'],
 ];
 
-const ORG_HINTS: [RegExp, string][] = [
+export const ORG_HINTS: [RegExp, string][] = [
   [/proveg/, 'ProVeg'],
   [/lidl/, 'Lidl'],
   [/plantbaseduniversities|plant-based-universities|pbu/, 'Plant-Based Universities'],
@@ -67,7 +73,7 @@ const ORG_HINTS: [RegExp, string][] = [
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
-function validDate(y: number, m: number, d: number): string | null {
+export function validDate(y: number, m: number, d: number): string | null {
   const dt = new Date(y, m - 1, d);
   if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
   return `${y}-${pad(m)}-${pad(d)}`;
@@ -135,7 +141,7 @@ export function fakeExtract(rawUrl: string): PrefillResult {
     .split(/[-_+.]+/)
     .filter(Boolean);
 
-  const haystack = `${host} ${path}`;
+  const haystack = `${host} ${path}`.replace(/[^a-z0-9%]+/g, '-');
   const type = TYPE_HINTS.find(([re]) => re.test(haystack))?.[1] ?? 'Event';
   const targetGroup = AUDIENCE_HINTS.find(([re]) => re.test(haystack))?.[1];
   const organiserGuess = ORG_HINTS.find(([re]) => re.test(host))?.[1];

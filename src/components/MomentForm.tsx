@@ -13,10 +13,19 @@ import {
 import { newId, useStore } from '../store';
 import { findSimilar, orgsOf, whenLabel } from '../lib/moments';
 import { fmtMonthTitle, monthKey, monthsBetween, nowStamp, todayISO } from '../lib/dates';
-import { DEMO_LINK, fakeExtract } from '../lib/prefill';
+import { DEMO_LINK, fakeExtract, type PrefillResult } from '../lib/prefill';
+import { readLinkRemote } from '../data/live';
 import { Modal, SimNote, Switch, useToast } from './ui';
 
 type DateMode = 'single' | 'range' | 'ongoing' | 'unsure';
+
+/** Where prefilled values came from ("Plak een link"). */
+type FillSource = 'ai' | 'page' | 'url';
+const FILL_LABEL: Record<FillSource, string> = {
+  ai: 'ingevuld door AI',
+  page: 'van de webpagina',
+  url: 'uit de link',
+};
 
 interface Draft {
   title: string;
@@ -143,6 +152,7 @@ function FormInner({
   const [reading, setReading] = useState(false);
   const [aiFields, setAiFields] = useState<Set<string>>(new Set());
   const [aiNote, setAiNote] = useState<string | null>(null);
+  const [fillSource, setFillSource] = useState<FillSource>('ai');
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => {
     setD((prev) => ({ ...prev, [k]: v }));
@@ -154,38 +164,82 @@ function FormInner({
   const knownOrgs = useMemo(() => Array.from(new Set(state.moments.flatMap(orgsOf))).sort(), [state.moments]);
   const formFields = state.fieldDefs.filter((f) => f.showInForm);
 
-  const readLink = (raw: string) => {
+  /** Put the values that were read into the form and mark which fields were filled in. */
+  const applyPrefill = (r: PrefillResult, link: string, source: FillSource, withDescription = true) => {
+    const useDate = r.foundDate || !__LIVE__; // the live version never guesses a date
+    setD((prev) => ({
+      ...prev,
+      title: r.title,
+      type: r.type,
+      ...(useDate
+        ? {
+            dateMode: r.dateUnsure ? 'unsure' : r.endDate ? 'range' : 'single',
+            startDate: r.dateUnsure ? '' : r.startDate,
+            endDate: r.endDate ?? '',
+            unsureMonth: r.dateUnsure ? monthKey(r.startDate) : '',
+            unsureNote: r.unsureNote ?? '',
+          }
+        : {}),
+      targetGroup: r.targetGroup ?? prev.targetGroup,
+      focus: r.focus ?? prev.focus,
+      region: r.region ?? prev.region,
+      free: r.free ?? prev.free,
+      link,
+      description: withDescription && r.description ? r.description : prev.description,
+      organiser: isCoordinator && r.organiserGuess ? r.organiserGuess : prev.organiser,
+    }));
+    const filled = ['title', 'type', 'link'];
+    if (useDate) filled.push('dateMode', 'startDate', 'endDate', 'unsureMonth');
+    if (withDescription && r.description) filled.push('description');
+    if (r.targetGroup) filled.push('targetGroup');
+    if (r.focus) filled.push('focus');
+    if (r.region) filled.push('region');
+    if (r.free !== undefined) filled.push('free');
+    if (isCoordinator && r.organiserGuess) filled.push('organiser');
+    setAiFields(new Set(filled));
+    setFillSource(source);
+    setErrors({});
+  };
+
+  const readLink = async (raw: string) => {
     const url = raw.trim();
     if (!url) return;
+    const link = /^https?:\/\//i.test(url) ? url : `https://${url}`;
     setReading(true);
     setAiNote(null);
-    setTimeout(() => {
+
+    if (!__LIVE__) {
+      // Offline prototype: simulated, based on the link text only.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
       const r = fakeExtract(url);
-      setD((prev) => ({
-        ...prev,
-        title: r.title,
-        type: r.type,
-        dateMode: r.dateUnsure ? 'unsure' : r.endDate ? 'range' : 'single',
-        startDate: r.dateUnsure ? '' : r.startDate,
-        endDate: r.endDate ?? '',
-        unsureMonth: r.dateUnsure ? monthKey(r.startDate) : '',
-        targetGroup: r.targetGroup ?? prev.targetGroup,
-        link: /^https?:\/\//.test(url) ? url : `https://${url}`,
-        description: r.description ?? prev.description,
-        organiser: isCoordinator && r.organiserGuess ? r.organiserGuess : prev.organiser,
-      }));
-      const filled = ['title', 'type', 'dateMode', 'startDate', 'endDate', 'unsureMonth', 'link', 'description'];
-      if (r.targetGroup) filled.push('targetGroup');
-      if (isCoordinator && r.organiserGuess) filled.push('organiser');
-      setAiFields(new Set(filled));
-      setErrors({});
-      setReading(false);
+      applyPrefill(r, link, 'ai');
       setAiNote(
         r.foundDate
           ? 'Titel, type en datum zijn ingevuld. Kijk ze even na voor je opslaat.'
           : 'Titel en type zijn ingevuld. Op de pagina stond geen duidelijke datum, dus we zetten ‘timing nog niet vast’. Pas aan waar nodig.',
       );
-    }, 1500);
+      setReading(false);
+      return;
+    }
+
+    const fallback = (why: string) => {
+      applyPrefill(fakeExtract(link), link, 'url', false);
+      setAiNote(`${why} De titel is afgeleid uit de link zelf; vul de rest zelf aan.`);
+    };
+    try {
+      const res = await readLinkRemote(link);
+      if (res.ok && res.result) {
+        applyPrefill(res.result, link, res.source === 'ai' ? 'ai' : 'page');
+        const by = res.source === 'ai' ? `Gelezen door AI (${res.provider === 'gemini' ? 'Gemini' : 'Claude'}).` : 'Overgenomen van de webpagina.';
+        const noDate = res.result.foundDate ? '' : ' Er stond geen datum op die we konden herkennen: vul die zelf in.';
+        setAiNote(`${by}${noDate} Kijk alles even na voor je opslaat.`);
+      } else {
+        fallback(res.message ?? 'Deze pagina kon niet gelezen worden.');
+      }
+    } catch {
+      fallback('Er ging iets mis bij het lezen van de pagina.');
+    }
+    setReading(false);
   };
 
   const save = () => {
@@ -236,7 +290,7 @@ function FormInner({
   const ai = (k: string) =>
     aiFields.has(k) ? (
       <span className="ml-2 inline-flex items-center gap-1 rounded bg-violet-50 px-1.5 py-0.5 text-[11px] font-semibold text-violet-900 ring-1 ring-violet-200">
-        <Sparkles className="size-3" aria-hidden="true" /> ingevuld door AI
+        <Sparkles className="size-3" aria-hidden="true" /> {FILL_LABEL[fillSource]}
       </span>
     ) : null;
   const aiRing = (k: string) => (aiFields.has(k) ? 'ring-2 ring-violet-200 border-violet-400' : '');
@@ -326,7 +380,7 @@ function FormInner({
                 Lees pagina
               </button>
             </div>
-            {!pasteUrl && !reading && (
+            {!__LIVE__ && !pasteUrl && !reading && (
               <button
                 type="button"
                 className="mt-2 min-h-9 text-sm font-semibold text-violet-800 underline underline-offset-2 hover:text-violet-950"
@@ -342,7 +396,7 @@ function FormInner({
               {reading && (
                 <div className="mt-3 flex items-center gap-2 text-sm font-semibold text-violet-900">
                   <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-                  AI leest de pagina…
+                  {__LIVE__ ? 'De pagina wordt gelezen…' : 'AI leest de pagina…'}
                 </div>
               )}
               {aiNote && !reading && (
@@ -353,10 +407,17 @@ function FormInner({
               )}
             </div>
             <div className="mt-3">
-              <SimNote>
-                Gesimuleerd: dit prototype haalt de gegevens uit de tekst van de link zelf. In de echte versie leest AI de volledige
-                webpagina.
-              </SimNote>
+              {__LIVE__ ? (
+                <p className="text-xs text-gray-700">
+                  De kalender leest de webpagina voor je: titel, datum, plaats, prijs en beschrijving. Niet elke website laat zich
+                  lezen, en soms mist er iets. Kijk dus altijd even na.
+                </p>
+              ) : (
+                <SimNote>
+                  Gesimuleerd: dit prototype haalt de gegevens uit de tekst van de link zelf. In de echte versie leest AI de volledige
+                  webpagina.
+                </SimNote>
+              )}
             </div>
           </section>
         )}
@@ -413,9 +474,9 @@ function FormInner({
               </div>
               <div>
                 <label htmlFor="f-focus" className="field-label">
-                  Focus
+                  Focus {ai('focus')}
                 </label>
-                <select id="f-focus" className="select" value={d.focus} onChange={(e) => set('focus', e.target.value as Focus)}>
+                <select id="f-focus" className={`select ${aiRing('focus')}`} value={d.focus} onChange={(e) => set('focus', e.target.value as Focus)}>
                   {FOCUSES.map((t) => (
                     <option key={t}>{t}</option>
                   ))}
@@ -544,11 +605,11 @@ function FormInner({
               </div>
               <div>
                 <label htmlFor="f-region" className="field-label">
-                  Regio
+                  Regio {ai('region')}
                 </label>
                 <input
                   id="f-region"
-                  className="input"
+                  className={`input ${aiRing('region')}`}
                   list="region-options"
                   value={d.region}
                   onChange={(e) => set('region', e.target.value)}
@@ -562,7 +623,7 @@ function FormInner({
               </div>
             </div>
             <fieldset>
-              <legend className="field-label">Toegang</legend>
+              <legend className="field-label">Toegang {ai('free')}</legend>
               <div className="flex gap-2">
                 {[
                   { v: true, label: 'Gratis' },

@@ -11,3 +11,7 @@ verify_jwt = false
 # does not work with the new publishable keys).
 [functions.digest]
 verify_jwt = false
+
+# "Plak een link": logged-in users only, checked inside the function.
+[functions.read-link]
+verify_jwt = false

@@ -71,7 +71,22 @@ Naast het prototype bestaat er een **werkende testversie** op **https://tattoova
 - **Iedereen ziet dezelfde gegevens, live bijgewerkt.**
 - **Echte e-mails**: bij een reactie of opmerking, bij een nieuwe toegangsaanvraag, en de digest via *Verstuur digest nu*.
 - **Een echte, persoonlijke agenda-feed** voor Outlook en Google Agenda.
-- **Nog gesimuleerd**: *Plak een link* (echte AI kost geld). De kennismakingsmail bij Matches kopieer je en verstuur je zelf.
+- **Plak een link leest de webpagina echt.** Zonder AI worden de gestructureerde eventgegevens (schema.org), de metatags en Nederlandse datums in de tekst gebruikt. Met een AI-sleutel leest ook AI mee (zie *AI koppelen*). Kan een pagina niet gelezen worden (bv. een website die robots weigert), dan wordt enkel de titel uit de link afgeleid.
+- **Nog niet automatisch**: de kennismakingsmail bij Matches kopieer je en verstuur je zelf.
+
+### AI koppelen voor “Plak een link” (optioneel)
+
+Je hebt een **API-sleutel** nodig. Een gewoon abonnement (Gemini Advanced, Claude Pro, …) werkt niet: dat is enkel voor de chat-app. Zet de sleutel in Supabase → *Edge Functions → Secrets*. Opnieuw publiceren is niet nodig, de volgende link wordt meteen met AI gelezen.
+
+| Dienst | Sleutel aanmaken | Naam van het geheim | Kosten |
+|---|---|---|---|
+| Gemini (Google) | [aistudio.google.com](https://aistudio.google.com) → *Get API key* | `GEMINI_API_KEY` | Gratis laag (standaardmodel `gemini-3.5-flash-lite`). In de gratis laag gebruikt Google de inhoud om zijn producten te verbeteren; er gaan enkel openbare webpagina's naartoe. |
+| Claude (Anthropic) | [console.anthropic.com](https://console.anthropic.com) → *API Keys* (vooraf wat tegoed kopen) | `ANTHROPIC_API_KEY` | Betalen per gebruik: enkele eurocenten per link met het standaardmodel `claude-opus-5`. |
+
+- Staan beide sleutels erin, kies dan met `AI_PROVIDER` (`gemini` of `anthropic`).
+- Een ander model kies je met `AI_MODEL`, bv. `claude-haiku-4-5` (goedkoper) of `gemini-3.8-flash`.
+- Weigert Claude een pagina om veiligheidsredenen, dan probeert Anthropic automatisch een ander model (`fallbacks: "default"`).
+- Werkt de AI niet (verkeerde sleutel, quotum op), dan valt de kalender stil terug op het lezen zonder AI.
 
 ### Waar draait wat (alles gratis)
 
@@ -91,13 +106,14 @@ Naast het prototype bestaat er een **werkende testversie** op **https://tattoova
 
 ```bash
 npm run test:db           # alle toegangsregels testen in een lokale Postgres (PGlite)
+npm run test:extract      # de paginalezer van "Plak een link" testen
 npm run dev:live          # ontwikkelserver tegen de echte database (.env.live nodig)
 npm run functions:deploy  # e-mail-, digest- en feedfuncties naar Supabase
 npm run deploy:site       # live-versie bouwen en op GitHub Pages zetten
 ```
 
 - `supabase/migrations/`: tabellen, toegangsregels (Row Level Security), triggers voor meldingen, seed met de 25 momenten (`npm run seed:sql` maakt die opnieuw uit `src/seed.ts`).
-- `supabase/functions/`: `notify` (meldingen mailen), `digest` (digest versturen) en `feed` (agenda-feed). Ze hergebruiken de e-mail- en ICS-code uit `src/lib/` via `scripts/sync-shared.mjs`.
+- `supabase/functions/`: `notify` (meldingen mailen), `digest` (digest versturen), `feed` (agenda-feed) en `read-link` (Plak een link: pagina ophalen, lezen, optioneel AI via `_shared/ai.ts`). Ze hergebruiken de e-mail- en ICS-code uit `src/lib/` via `scripts/sync-shared.mjs`.
 - `supabase/templates/login-code.html`: het e-mailsjabloon voor de inlogcode.
 - `.env.live`: `VITE_SUPABASE_URL` en `VITE_SUPABASE_ANON_KEY` van het project.
 - Supabase-geheimen (functies): `BREVO_API_KEY`, `SENDER_EMAIL`, `SENDER_NAME`, `APP_URL`.

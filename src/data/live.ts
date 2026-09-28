@@ -2,6 +2,7 @@
 // user may do; these functions just translate app actions into Supabase calls.
 import type { Action } from '../store';
 import type { AppState, Profile } from '../types';
+import type { PrefillResult } from '../lib/prefill';
 import { sb } from '../lib/supabase';
 import { STATE_VERSION } from '../seed';
 import {
@@ -215,6 +216,32 @@ export async function addAccessRule(rule: AccessRule) {
 
 export async function removeAccessRule(pattern: string) {
   mustChange(await sb().from('access_rules').delete().eq('pattern', pattern).select('pattern'));
+}
+
+export interface ReadLinkResponse {
+  ok: boolean;
+  /** "ai": read by an AI model; "page": from the page's own data (no AI key set, or AI unavailable). */
+  source?: 'ai' | 'page';
+  provider?: 'anthropic' | 'gemini';
+  aiError?: boolean;
+  result?: PrefillResult;
+  reason?: string;
+  message?: string;
+}
+
+/** "Plak een link": the read-link edge function fetches and reads the page. */
+export async function readLinkRemote(url: string): Promise<ReadLinkResponse> {
+  const { data, error } = await sb().functions.invoke('read-link', { body: { url } });
+  if (error) {
+    // Non-2xx answers still carry a useful JSON message.
+    const context = (error as { context?: Response }).context;
+    try {
+      return (await context!.json()) as ReadLinkResponse;
+    } catch {
+      throw new Error(error.message);
+    }
+  }
+  return data as ReadLinkResponse;
 }
 
 /** Sends the monthly digest to every active user now (edge function, coordinators only). */

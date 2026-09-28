@@ -12,7 +12,7 @@ export function DemoBanner({ onReset }: { onReset: () => void }) {
     return (
       <div className="border-b border-sky-200 bg-sky-50 text-sky-950">
         <p className="mx-auto max-w-7xl px-4 py-1.5 text-xs font-semibold sm:text-sm">
-          Testversie – echte gegevens, e-mails worden echt verstuurd. “Plak een link” is nog gesimuleerd.
+          Testversie – echte gegevens, e-mails worden echt verstuurd.
         </p>
       </div>
     );
