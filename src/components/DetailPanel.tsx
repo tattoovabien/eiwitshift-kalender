@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Building,
   CalendarDays,
@@ -18,7 +18,7 @@ import {
   Trash,
   X,
 } from 'lucide-react';
-import type { Moment, Reaction, ReactionKind } from '../types';
+import type { Comment, Moment, NotificationKind, Reaction, ReactionKind } from '../types';
 import { SIGNAL_KINDS, type SignalKind } from '../types';
 import { REACTION_LABEL, useStore } from '../store';
 import { canEdit, isOwnedBy, isPast, organiserLabel, whenLabel } from '../lib/moments';
@@ -30,12 +30,33 @@ import { Drawer, Modal, Pill, SectionTitle, Switch, TypeBadge, useToast } from '
 export const HALFHALF_SENTENCE =
   'Dit initiatief past binnen de halfhalf-richtlijn van het Vlaams Instituut Gezond Leven. Meer info: halfhalf.be';
 
+/** What a clicked notification points at, so the panel can scroll to it and light it up. */
+export interface DetailFocus {
+  kind: NotificationKind;
+  refId?: string;
+  fromOrg?: string;
+  detail?: string;
+}
+
+/** Find the element a notification is about (older notifications have no refId: match on org or text). */
+function findFocusTarget(root: HTMLElement, f: DetailFocus): HTMLElement | null {
+  const all = (prefix: string) => Array.from(root.querySelectorAll<HTMLElement>(`[data-focus^="${prefix}:"]`));
+  const byId = f.refId ? root.querySelector<HTMLElement>(`[data-focus="${f.kind === 'reaction' ? 'reaction' : f.kind}:${f.refId}"]`) : null;
+  if (byId) return byId;
+  if (f.kind === 'reaction') return all('reaction').find((el) => el.dataset.org === f.fromOrg) ?? null;
+  if (f.kind === 'comment') return all('comment').find((el) => !!f.detail && (el.textContent ?? '').includes(f.detail)) ?? null;
+  if (f.kind === 'signal') return all('signal')[0] ?? null;
+  return null;
+}
+
 export function DetailPanel({
   momentId,
+  focus,
   onClose,
   onEdit,
 }: {
   momentId: string | null;
+  focus?: DetailFocus | null;
   onClose: () => void;
   onEdit: (id: string) => void;
 }) {
@@ -43,18 +64,42 @@ export function DetailPanel({
   const m = momentId ? state.moments.find((x) => x.id === momentId) : undefined;
   return (
     <Drawer open={!!m} onClose={onClose} label={m ? `Details: ${m.title}` : 'Details'}>
-      {m && <DetailContent key={m.id} m={m} onClose={onClose} onEdit={() => onEdit(m.id)} />}
+      {m && <DetailContent key={m.id} m={m} focus={focus ?? null} onClose={onClose} onEdit={() => onEdit(m.id)} />}
     </Drawer>
   );
 }
 
-function DetailContent({ m, onClose, onEdit }: { m: Moment; onClose: () => void; onEdit: () => void }) {
+function DetailContent({
+  m,
+  focus,
+  onClose,
+  onEdit,
+}: {
+  m: Moment;
+  focus: DetailFocus | null;
+  onClose: () => void;
+  onEdit: () => void;
+}) {
   const { state, dispatch, role, live } = useStore();
   const toast = useToast();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const limited = role.id === 'anon';
   const editable = canEdit(m, role);
   const past = isPast(m, todayISO());
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  // Opened from a notification: scroll to what happened and light it up for a moment.
+  useEffect(() => {
+    if (!focus || focus.kind === 'new_moment') return;
+    const t = setTimeout(() => {
+      const el = bodyRef.current && findFocusTarget(bodyRef.current, focus);
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('focus-flash');
+      setTimeout(() => el.classList.remove('focus-flash'), 3200);
+    }, 250);
+    return () => clearTimeout(t);
+  }, [focus]);
 
   const downloadIcs = () => {
     downloadFile(`${slugify(m.title)}.ics`, buildIcs([m], m.title, limited), 'text/calendar;charset=utf-8');
@@ -76,7 +121,7 @@ function DetailContent({ m, onClose, onEdit }: { m: Moment; onClose: () => void;
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div ref={bodyRef} className="flex-1 overflow-y-auto">
         <div className="space-y-6 px-5 py-5 sm:px-6">
           {/* Title block */}
           <div>
@@ -337,7 +382,7 @@ function ReactionBlock({ m }: { m: Moment }) {
           </SectionTitle>
           <ul className="divide-y divide-gray-200 rounded-xl border border-gray-200">
             {reactions.map((r) => (
-              <li key={r.id} className="px-4 py-3">
+              <li key={r.id} data-focus={`reaction:${r.id}`} data-org={r.org} className="px-4 py-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <p className="font-semibold text-gray-900">
                     {r.org}
@@ -440,10 +485,28 @@ function HalfhalfCopy() {
 }
 
 function Comments({ m }: { m: Moment }) {
-  const { state, dispatch, role } = useStore();
+  const { state, dispatch, role, live } = useStore();
   const toast = useToast();
   const [text, setText] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const [confirmId, setConfirmId] = useState<string | null>(null);
   const comments = state.comments.filter((c) => c.momentId === m.id).sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+
+  // Live: only the person who wrote it. Prototype (no real users): the same organisation as the demo role.
+  const myId = live?.profile?.userId;
+  const isMine = (c: Comment) => (live ? !!myId && c.authorId === myId : c.org === role.org);
+  const canDelete = (c: Comment) => isMine(c) || role.id === 'coordinator';
+
+  const saveEdit = (c: Comment) => {
+    const t = draft.trim();
+    if (!t) return;
+    if (t !== c.text) {
+      dispatch({ type: 'editComment', id: c.id, text: t });
+      toast('Opmerking aangepast');
+    }
+    setEditingId(null);
+  };
 
   return (
     <section>
@@ -457,16 +520,95 @@ function Comments({ m }: { m: Moment }) {
       <ul className="mb-3 space-y-3">
         {comments.map((c) => {
           const isMe = c.org === role.org;
+          const editing = editingId === c.id;
           return (
-            <li key={c.id} className={`rounded-xl px-4 py-3 ${isMe ? 'bg-brand-50' : 'bg-gray-100'}`}>
+            <li key={c.id} data-focus={`comment:${c.id}`} className={`rounded-xl px-4 py-3 ${isMe ? 'bg-brand-50' : 'bg-gray-100'}`}>
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className="text-sm font-semibold text-gray-900">
                   {c.org}
                   {c.org === COORDINATOR_ORG && <span className="ml-1 font-normal text-gray-600">(coördinatie)</span>}
                 </span>
-                <span className="text-xs text-gray-600">{fmtRelative(c.createdAt)}</span>
+                <span className="text-xs text-gray-600">
+                  {fmtRelative(c.createdAt)}
+                  {c.editedAt && ' · aangepast'}
+                </span>
               </div>
-              <p className="mt-1 text-[15px] whitespace-pre-line text-gray-800">{c.text}</p>
+              {editing ? (
+                <form
+                  className="mt-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    saveEdit(c);
+                  }}
+                >
+                  <label htmlFor={`edit-${c.id}`} className="sr-only">
+                    Opmerking aanpassen
+                  </label>
+                  <textarea
+                    id={`edit-${c.id}`}
+                    className="input min-h-20"
+                    rows={3}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    autoFocus
+                  />
+                  <div className="mt-2 flex justify-end gap-2">
+                    <button type="button" className="btn-ghost" onClick={() => setEditingId(null)}>
+                      Annuleren
+                    </button>
+                    <button type="submit" className="btn-primary" disabled={!draft.trim()}>
+                      Bewaar
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <p className="mt-1 text-[15px] whitespace-pre-line text-gray-800">{c.text}</p>
+              )}
+              {!editing && (isMine(c) || canDelete(c)) && (
+                confirmId === c.id ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm" role="alert">
+                    <span className="text-gray-800">Deze opmerking verwijderen?</span>
+                    <button
+                      type="button"
+                      className="btn min-h-9 bg-red-700 px-3 text-white hover:bg-red-800"
+                      onClick={() => {
+                        dispatch({ type: 'deleteComment', id: c.id });
+                        setConfirmId(null);
+                        toast('Opmerking verwijderd');
+                      }}
+                    >
+                      Verwijderen
+                    </button>
+                    <button type="button" className="btn-ghost min-h-9 px-3" onClick={() => setConfirmId(null)}>
+                      Annuleren
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-1 flex gap-1">
+                    {isMine(c) && (
+                      <button
+                        type="button"
+                        className="inline-flex min-h-9 items-center gap-1 rounded-md px-2 text-sm font-semibold text-gray-700 hover:bg-white/70"
+                        onClick={() => {
+                          setEditingId(c.id);
+                          setDraft(c.text);
+                        }}
+                      >
+                        <Pencil className="size-3.5" aria-hidden="true" /> Aanpassen
+                      </button>
+                    )}
+                    {canDelete(c) && (
+                      <button
+                        type="button"
+                        className="inline-flex min-h-9 items-center gap-1 rounded-md px-2 text-sm font-semibold text-red-700 hover:bg-white/70"
+                        onClick={() => setConfirmId(c.id)}
+                      >
+                        <Trash className="size-3.5" aria-hidden="true" /> Verwijderen
+                      </button>
+                    )}
+                  </div>
+                )
+              )}
             </li>
           );
         })}
@@ -475,7 +617,7 @@ function Comments({ m }: { m: Moment }) {
         onSubmit={(e) => {
           e.preventDefault();
           if (!text.trim()) return;
-          dispatch({ type: 'addComment', momentId: m.id, org: role.org, text: text.trim() });
+          dispatch({ type: 'addComment', momentId: m.id, org: role.org, text: text.trim(), authorId: myId });
           setText('');
           toast('Opmerking geplaatst');
         }}
@@ -594,7 +736,7 @@ function SignalsForCoordinator({ m }: { m: Moment }) {
       ) : (
         <ul className="mt-2 space-y-2">
           {signals.map((s) => (
-            <li key={s.id} className="rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-gray-200">
+            <li key={s.id} data-focus={`signal:${s.id}`} className="rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-gray-200">
               <span className="font-semibold text-gray-900">{s.kind}</span>
               <span className="text-gray-600"> · {s.anonymous ? 'anoniem' : s.fromOrg} · {fmtRelative(s.createdAt)}</span>
               {s.resolved && <span className="ml-1 text-brand-800">· opgevolgd</span>}

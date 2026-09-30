@@ -97,6 +97,9 @@ export interface Comment {
   org: string;
   text: string;
   createdAt: string;
+  /** Live version: the user who wrote it (only they may edit it). */
+  authorId?: string;
+  editedAt?: string;
 }
 
 export const SIGNAL_KINDS = ['Mogelijke tegenstrijdigheid', 'Slechte timing', 'Andere bezorgdheid'] as const;
@@ -135,6 +138,8 @@ export interface AppNotification {
   fromOrg: string;
   /** Extra context: reaction kind label, comment text, … */
   detail?: string;
+  /** Id of the reaction, comment, signal or moment this is about (to open and highlight it). */
+  refId?: string;
   createdAt: string;
   read: boolean;
 }

@@ -116,7 +116,15 @@ export function reactionFromRow(r: Row): Reaction {
 }
 
 export function commentFromRow(r: Row): Comment {
-  return { id: r.id, momentId: r.moment_id, org: r.org, text: r.text, createdAt: r.created_at };
+  return {
+    id: r.id,
+    momentId: r.moment_id,
+    org: r.org,
+    text: r.text,
+    createdAt: r.created_at,
+    authorId: opt(r.created_by),
+    editedAt: opt(r.edited_at),
+  };
 }
 
 export function signalFromRow(r: Row): Signal {
@@ -140,6 +148,7 @@ export function notificationFromRow(r: Row): AppNotification {
     kind: r.kind,
     fromOrg: r.from_org,
     detail: opt(r.detail),
+    refId: opt(r.ref_id),
     createdAt: r.created_at,
     read: !!r.read,
   };

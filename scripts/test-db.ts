@@ -233,6 +233,43 @@ async function main() {
   r = await as(proveg, 'select * from public.access_rules');
   check('partners cannot read access rules', r.rows.length === 0, r);
 
+  // --- ref_id on every kind of notification
+  const refs = await admin<{ kind: string; missing: number }>(
+    `select kind, count(*) filter (where ref_id is null)::int as missing from public.notifications
+     where kind in ('reaction','comment','new_moment','signal') group by kind order by kind`,
+  );
+  check('every notification points at what happened (ref_id)', refs.length === 4 && refs.every((r) => r.missing === 0), refs);
+  const sigRef = await admin<{ ok: boolean }>(
+    `select exists (select 1 from public.notifications n join public.signals s on s.id = n.ref_id where n.kind = 'signal') as ok`,
+  );
+  check('signal notification ref_id finds the signal (for its note)', sigRef[0].ok, sigRef);
+
+  // --- editing and deleting comments
+  await as(lucas, `insert into public.comments (id, moment_id, text) values ('c-own', 'm-test', 'Eerste versie')`);
+  r = await as(proveg, `update public.comments set text = 'Gekaapt' where id = 'c-own'`);
+  check('someone else cannot edit my comment', r.affected === 0, r);
+  r = await as(lucas, `update public.comments set text = 'Tweede versie', org = 'ProVeg', moment_id = 'm-smos' where id = 'c-own'`);
+  const ce = await admin(`select text, org, moment_id, edited_at from public.comments where id = 'c-own'`);
+  check('author edits text; org/moment stay; edited_at set', r.affected === 1 && ce[0].text === 'Tweede versie' && ce[0].org === 'Plant-Based Universities' && ce[0].moment_id === 'm-test' && ce[0].edited_at !== null, ce);
+  n = await as(proveg, `select detail from public.notifications where ref_id = 'c-own'`);
+  check('edit updates the notification text', n.rows.length === 1 && (n.rows[0] as { detail: string }).detail === 'Tweede versie', n);
+  r = await as(proveg, `delete from public.comments where id = 'c-own'`);
+  check('organiser cannot delete someone else’s comment', r.affected === 0, r);
+  r = await as(enya, `delete from public.comments where id = 'c-own'`);
+  n = await as(proveg, `select * from public.notifications where ref_id = 'c-own'`);
+  check('coordinator deletes a comment; unread notification goes too', r.affected === 1 && n.rows.length === 0, { r, n });
+  await as(proveg, `insert into public.comments (id, moment_id, text) values ('c-pv', 'm-test', 'Van ProVeg')`);
+  r = await as(proveg, `delete from public.comments where id = 'c-pv'`);
+  check('author deletes own comment', r.affected === 1, r);
+
+  // --- a name change reaches earlier reactions, but a reaction's name cannot be edited directly
+  r = await as(lidl, `update public.reactions set name = 'Hacker' where id = 'r-2'`);
+  let rn = await admin<{ name: string }>(`select name from public.reactions where id = 'r-2'`);
+  check('reaction name cannot be changed directly', rn[0].name !== 'Hacker', rn);
+  r = await as(lidl, `update public.profiles set name = 'Nieuwe Naam' where user_id = '${lidl}'`);
+  rn = await admin<{ name: string }>(`select name from public.reactions where created_by = '${lidl}'`);
+  check('name change updates my reactions', r.affected === 1 && rn.length > 0 && rn.every((x) => x.name === 'Nieuwe Naam'), rn);
+
   // --- blocked user
   await as(enya, `update public.profiles set status = 'blocked' where user_id = '${lidl}'`);
   r = await as(lidl, 'select * from public.moments');

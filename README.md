@@ -31,12 +31,13 @@ Wissel bovenaan via **Demo-rol** tussen *Coördinator (Omgeving)*, *Partner: Lid
    - Open het nieuwe moment ‘Kookworkshop Plantaardig op kot’ (maart 2027) en klik op **Ik haak aan**. Voeg eventueel een korte toelichting toe.
 4. **De organisator krijgt een melding (1 min)**
    - Demo-rol → *Partner: ProVeg*. Het belletje heeft een rood bolletje.
-   - Klik op het belletje en dan op de melding “Nieuwe reactie op jouw moment…”. Zo ziet de e-mail eruit die ProVeg zou krijgen.
+   - Klik op het belletje en dan op de melding “Nieuwe reactie op jouw moment…”. Het moment opent en de nieuwe reactie licht even op.
+   - Klik in de meldingenlijst op het envelopje naast de melding: zo ziet de e-mail eruit die ProVeg zou krijgen.
 5. **Coördinator: matches en digest (1 min)**
    - Demo-rol → *Coördinator (Omgeving)* → **Dashboard**.
-   - *Matches*: momenten met 2 of meer reacties, met wie al in contact is. Toon *Breng in contact*.
-   - *Digest-preview*: de maandelijkse nudge-mail met onderwerp, “komende 2 maanden”, “zoekt partners”, “populairste momenten” en “vul de agenda aan”. Klik op *Kopieer als tekst*.
-   - Als er tijd over is: *Signalen* (bezorgdheden die enkel coördinatoren zien), *Velden beheren* (een nieuw veld verschijnt meteen in het formulier en de filters), *Export* (CSV) en het rss-icoon voor de agenda-feed.
+   - *Matches*: momenten waar minstens één partner op reageerde, de drukste bovenaan, met wie al in contact is. Toon *Breng in contact*.
+   - *Digest-preview*: de maandelijkse nudge-mail met “komende 2 maanden”, “zoekt partners”, “populairste momenten” en “vul de agenda aan”. Pas links het onderwerp aan, voeg een eigen bericht toe of vink een moment uit, en zie de preview meteen veranderen. Klik op *Kopieer als tekst*.
+   - Als er tijd over is: *Signalen* (bezorgdheden die enkel coördinatoren zien), *Velden beheren* (een nieuw veld verschijnt meteen in het formulier en de filters), *Export* (Excel of CSV) en het rss-icoon voor de agenda-feed.
 
 ## Wat zit erin
 
@@ -45,7 +46,9 @@ Wissel bovenaan via **Demo-rol** tussen *Coördinator (Omgeving)*, *Partner: Lid
 - **Detailpaneel** met *Ik haak aan* en *Ik kan mee verspreiden*, “we zijn al in contact”, opmerkingen, *Signaleer bezorgdheid*, *Voeg toe aan agenda (.ics)* (downloadt echt) en *Kopieer halfhalf-zinnetje*.
 - **Formulier** met *Plak een link* (gesimuleerde AI), een waarschuwing voor dubbele momenten en rechten: partners bewerken enkel hun eigen momenten, coördinatoren alles.
 - **Meldingen** per rol, met een e-mailpreview.
-- **Coördinator-dashboard** met Matches, Signalen, Velden beheren, Digest-preview en Export (CSV en .ics).
+- **Coördinator-dashboard** met Matches, Signalen, Velden beheren, Digest-preview (aanpasbaar) en Export (Excel, CSV en .ics).
+- **Opmerkingen** kan je zelf aanpassen of verwijderen; een coördinator kan elke opmerking verwijderen.
+- **Meldingen** openen wat er gebeurde (het moment, met de reactie, opmerking of bezorgdheid even opgelicht); het envelopje toont de bijhorende e-mail.
 - **Agenda-feed** met een voorbeeld-abonnementslink en uitleg voor Outlook en Google Agenda.
 - **Niet ingelogd**: je ziet enkel titels en data.
 
@@ -99,8 +102,24 @@ Je hebt een **API-sleutel** nodig. Een gewoon abonnement (Gemini Advanced, Claud
 ### Beheer
 
 - **Voor een demo**: open het Supabase-dashboard (zodat het project niet gepauzeerd is) en zet de adressen van de gasten op de toegangslijst.
-- **Iemand toegang geven**: *Dashboard → Toegang*. Dat kan met een exact adres of met een heel domein (bv. `@proveg.com`).
+- **Iemand toegang geven**: *Dashboard → Toegang*.
+  - *Toegangslijst* = wie je vooraf binnenlaat (een exact adres, of een heel domein zoals `@proveg.com`). Er wordt niets aangemaakt of verstuurd; die persoon komt meteen binnen bij de eerste login.
+  - *Aanvragen* = wie inlogde maar niet op de lijst stond; jij keurt goed.
+  - *Gebruikers* = iedereen die al een account heeft (minstens één keer ingelogd).
+- **Je naam wijzigen**: klik rechtsboven op je naam → *Naam wijzigen*. Ook je eerdere reacties tonen dan de nieuwe naam.
+- **Mail in Gmail bij ‘Reclame’?** Sleep hem naar *Primair* en kies “Ja” voor toekomstige berichten. Brevo voegt altijd een volgpixel toe; op lange termijn helpt een eigen domein (zie hieronder).
 - **Na de test**: verwijder de testgebruikers in Supabase → *Authentication → Users*, of verwijder het hele project.
+
+### Bij de overdracht aan Omgeving (Enya en Kristof)
+
+- [ ] **Eigen domein** (bv. `eiwitshift-kalender.be`, ± €10–15 per jaar), bij voorkeur op naam van Omgeving of PBU:
+  - in Brevo → *Senders, Domains & Dedicated IPs → Domains* het domein toevoegen en de 3–4 DNS-records bij de registrar plakken;
+  - daarna de afzender aanpassen in Supabase (*Authentication → Emails → SMTP*) en in het geheim `SENDER_EMAIL`;
+  - optioneel: de site op `kalender.<domein>` zetten (GitHub Pages → *Custom domain*) en `APP_URL` + de *Site URL* in Supabase aanpassen.
+- [ ] Wie wordt eigenaar van de Supabase-, Brevo- en GitHub-accounts? Leden toevoegen of de projecten overdragen.
+- [ ] Testdata en testaccounts wissen (bv. het moment “Testevent” en `+proveg`-adressen).
+- [ ] Enya en Kristof als coördinator op de toegangslijst; eventueel jezelf daarna als gewone partner.
+- [ ] Beslissen over privacyverklaring, toegankelijkheidscheck en een AI-sleutel voor “Plak een link”.
 
 ### Voor een ontwikkelaar
 

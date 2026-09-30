@@ -1,10 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { Bell, Handshake, Inbox, Mail, MessageSquare, Plus, ShieldAlert, UserPlus } from 'lucide-react';
-import type { AppNotification } from '../types';
+import type { AppNotification, Signal } from '../types';
 import { useStore } from '../store';
 import { COORDINATOR_ORG, isForMe } from '../roles';
 import { fmtRelative } from '../lib/dates';
-import { notificationEmail, notificationLine, notificationTitle } from '../lib/emails';
+import { notificationEmail, notificationLine, notificationTitle, type NotificationExtra } from '../lib/emails';
 import { EmailPreview } from './EmailPreview';
 import { Modal, SimNote } from './ui';
 
@@ -16,13 +16,21 @@ const ICONS = {
   access_request: UserPlus,
 };
 
+/** Extra context for a notification: a signal's note is looked up by its refId (coordinators can read signals). */
+function extraFor(n: AppNotification, signals: Signal[]): NotificationExtra {
+  if (n.kind !== 'signal') return {};
+  return { signalNote: signals.find((s) => s.id === n.refId)?.note };
+}
+
 export function NotificationsPanel({
   open,
   onClose,
+  onOpen,
   onPreview,
 }: {
   open: boolean;
   onClose: () => void;
+  onOpen: (n: AppNotification) => void;
   onPreview: (id: string) => void;
 }) {
   const { state, dispatch, role, live } = useStore();
@@ -86,31 +94,27 @@ export function NotificationsPanel({
       ) : (
         <ul className="flex-1 divide-y divide-gray-100 overflow-y-auto">
           {list.map((n) => (
-            <NotificationRow key={n.id} n={n} onClick={() => onPreview(n.id)} />
+            <NotificationRow key={n.id} n={n} onOpen={() => onOpen(n)} onPreview={() => onPreview(n.id)} />
           ))}
         </ul>
       )}
       <div className="border-t border-gray-200 bg-gray-50 px-4 py-2.5 text-xs text-gray-600">
         <Mail className="mr-1 inline size-3.5 align-[-2px]" aria-hidden="true" />
         {live
-          ? 'Je krijgt elke melding ook per e-mail. Klik op een melding om die e-mail te bekijken.'
-          : 'In de echte versie krijg je dit ook per e-mail. Klik op een melding om de e-mail te bekijken.'}
+          ? 'Je krijgt elke melding ook per e-mail. Klik op het envelopje om die e-mail te bekijken.'
+          : 'In de echte versie krijg je dit ook per e-mail. Klik op het envelopje om die e-mail te bekijken.'}
       </div>
     </div>
   );
 }
 
-function NotificationRow({ n, onClick }: { n: AppNotification; onClick: () => void }) {
+function NotificationRow({ n, onOpen, onPreview }: { n: AppNotification; onOpen: () => void; onPreview: () => void }) {
   const { state } = useStore();
   const m = state.moments.find((x) => x.id === n.momentId);
   const Icon = ICONS[n.kind] ?? Bell;
   return (
-    <li>
-      <button
-        type="button"
-        onClick={onClick}
-        className={`flex w-full gap-3 px-4 py-3 text-left hover:bg-gray-50 ${n.read ? '' : 'bg-brand-50/50'}`}
-      >
+    <li className={`flex items-stretch ${n.read ? '' : 'bg-brand-50/50'}`}>
+      <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 gap-3 py-3 pl-4 text-left hover:bg-gray-50">
         <span
           className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full ${
             n.kind === 'signal' || n.kind === 'access_request' ? 'bg-amber-100 text-amber-900' : 'bg-brand-100 text-brand-800'
@@ -120,10 +124,19 @@ function NotificationRow({ n, onClick }: { n: AppNotification; onClick: () => vo
         </span>
         <span className="min-w-0 flex-1">
           <span className={`block text-sm ${n.read ? 'text-gray-800' : 'font-semibold text-gray-900'}`}>{notificationTitle(n, m)}</span>
-          <span className="mt-0.5 line-clamp-2 block text-sm text-gray-600">{notificationLine(n)}</span>
+          <span className="mt-0.5 line-clamp-2 block text-sm text-gray-600">{notificationLine(n, extraFor(n, state.signals))}</span>
           <span className="mt-0.5 block text-xs text-gray-600">{fmtRelative(n.createdAt)}</span>
         </span>
         {!n.read && <span className="mt-2 size-2.5 shrink-0 rounded-full bg-brand-600" aria-label="ongelezen" />}
+      </button>
+      <button
+        type="button"
+        onClick={onPreview}
+        className="flex w-12 shrink-0 items-start justify-center pt-4 text-gray-500 hover:bg-gray-50 hover:text-gray-800"
+        aria-label="Bekijk de e-mail van deze melding"
+        title="Bekijk de e-mail"
+      >
+        <Mail className="size-4" aria-hidden="true" />
       </button>
     </li>
   );
@@ -170,7 +183,7 @@ export function NotificationEmailModal({
     >
       {n && (
         <div className="space-y-3">
-          <EmailPreview email={notificationEmail(n, m)} />
+          <EmailPreview email={notificationEmail(n, m, extraFor(n, state.signals))} />
           {!live && <SimNote>Niets wordt echt verstuurd: dit is een voorbeeld van de e-mail in de echte versie.</SimNote>}
         </div>
       )}

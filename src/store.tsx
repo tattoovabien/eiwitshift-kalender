@@ -37,7 +37,9 @@ export type Action =
   | { type: 'removeReaction'; id: string }
   | { type: 'setReactionNote'; id: string; note: string }
   | { type: 'toggleContact'; id: string }
-  | { type: 'addComment'; momentId: string; org: string; text: string; id?: string }
+  | { type: 'addComment'; momentId: string; org: string; text: string; id?: string; authorId?: string }
+  | { type: 'editComment'; id: string; text: string }
+  | { type: 'deleteComment'; id: string }
   | { type: 'addSignal'; momentId: string; kind: SignalKind; note: string; anonymous: boolean; org: string; id?: string }
   | { type: 'toggleSignalResolved'; id: string }
   | { type: 'markRead'; id: string }
@@ -81,6 +83,7 @@ export function reducer(state: AppState, action: Action): AppState {
           momentId: action.moment.id,
           kind: 'new_moment',
           fromOrg: action.byOrg,
+          refId: action.moment.id,
         });
       }
       return { ...state, moments, notifications };
@@ -120,6 +123,7 @@ export function reducer(state: AppState, action: Action): AppState {
           kind: 'reaction',
           fromOrg: action.org,
           detail: REACTION_LABEL[action.kind],
+          refId: reaction.id,
         }),
       };
     }
@@ -129,7 +133,9 @@ export function reducer(state: AppState, action: Action): AppState {
       if (!r) return state;
       // Withdrawing also withdraws the organiser's notification, if it wasn't read yet.
       const stale = (n: AppNotification) =>
-        !n.read && n.kind === 'reaction' && n.momentId === r.momentId && n.fromOrg === r.org && n.detail === REACTION_LABEL[r.kind];
+        !n.read &&
+        n.kind === 'reaction' &&
+        (n.refId ? n.refId === r.id : n.momentId === r.momentId && n.fromOrg === r.org && n.detail === REACTION_LABEL[r.kind]);
       return {
         ...state,
         reactions: state.reactions.filter((x) => x.id !== action.id),
@@ -152,7 +158,14 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'addComment': {
       const m = state.moments.find((x) => x.id === action.momentId);
       if (!m) return state;
-      const comment = { id: action.id ?? newId('c'), momentId: m.id, org: action.org, text: action.text, createdAt: nowStamp() };
+      const comment = {
+        id: action.id ?? newId('c'),
+        momentId: m.id,
+        org: action.org,
+        text: action.text,
+        createdAt: nowStamp(),
+        authorId: action.authorId,
+      };
       // The organiser is notified, and so is everyone who already took part in the thread.
       const participants = state.comments.filter((c) => c.momentId === m.id).map((c) => c.org);
       return {
@@ -163,9 +176,26 @@ export function reducer(state: AppState, action: Action): AppState {
           kind: 'comment',
           fromOrg: action.org,
           detail: action.text,
+          refId: comment.id,
         }),
       };
     }
+
+    case 'editComment':
+      return {
+        ...state,
+        comments: state.comments.map((c) => (c.id === action.id ? { ...c, text: action.text, editedAt: nowStamp() } : c)),
+        notifications: state.notifications.map((n) =>
+          n.kind === 'comment' && n.refId === action.id ? { ...n, detail: action.text } : n,
+        ),
+      };
+
+    case 'deleteComment':
+      return {
+        ...state,
+        comments: state.comments.filter((c) => c.id !== action.id),
+        notifications: state.notifications.filter((n) => !(n.kind === 'comment' && !n.read && n.refId === action.id)),
+      };
 
     case 'addSignal': {
       const signal = {
@@ -186,6 +216,7 @@ export function reducer(state: AppState, action: Action): AppState {
           kind: 'signal',
           fromOrg: action.anonymous ? 'Anoniem' : action.org,
           detail: action.kind,
+          refId: signal.id,
         }),
       };
     }

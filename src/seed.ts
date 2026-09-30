@@ -451,18 +451,19 @@ const N = (
   createdAt: string,
   detail?: string,
   read = false,
-): AppNotification => ({ id, toOrg, momentId, kind, fromOrg, createdAt, detail, read });
+  refId?: string,
+): AppNotification => ({ id, toOrg, momentId, kind, fromOrg, createdAt, detail, read, refId });
 
 export const SEED_NOTIFICATIONS: AppNotification[] = [
-  N('n1', 'Lidl', 'm-on-a-budget', 'reaction', 'Plant-Based Universities', T('2026-09-18', '14:20'), 'Ik haak aan', true),
-  N('n2', 'ProVeg', 'm-on-a-budget', 'reaction', 'Plant-Based Universities', T('2026-09-18', '14:20'), 'Ik haak aan', true),
-  N('n3', 'Plant-Based Universities', 'm-on-a-budget', 'comment', 'Lidl', T('2026-09-22', '10:05'), 'Zeker! We sturen de bestanden deze week door.'),
-  N('n4', 'ProVeg', 'm-campus-v-cup', 'reaction', 'Plant-Based Universities', T('2026-09-20', '12:00'), 'Ik haak aan', true),
-  N('n5', 'ProVeg', 'm-campus-v-cup', 'reaction', 'Lidl', T('2026-09-23', '17:10'), 'Ik kan mee verspreiden'),
-  N('n6', 'ProVeg', 'm-zomerbar', 'reaction', 'Plant-Based Universities', T('2026-09-24', '11:40'), 'Ik haak aan'),
-  N('n7', COORDINATOR_ORG, 'm-voorschrift', 'signal', 'Anoniem', T('2026-09-19', '10:20'), 'Slechte timing', true),
-  N('n8', COORDINATOR_ORG, 'm-bonen', 'signal', 'Lidl', T('2026-09-21', '16:00'), 'Mogelijke tegenstrijdigheid'),
-  N('n9', COORDINATOR_ORG, 'm-zomerbar', 'new_moment', 'ProVeg', T('2026-09-24', '09:15')),
+  N('n1', 'Lidl', 'm-on-a-budget', 'reaction', 'Plant-Based Universities', T('2026-09-18', '14:20'), 'Ik haak aan', true, 'r1'),
+  N('n2', 'ProVeg', 'm-on-a-budget', 'reaction', 'Plant-Based Universities', T('2026-09-18', '14:20'), 'Ik haak aan', true, 'r1'),
+  N('n3', 'Plant-Based Universities', 'm-on-a-budget', 'comment', 'Lidl', T('2026-09-22', '10:05'), 'Zeker! We sturen de bestanden deze week door.', false, 'c2'),
+  N('n4', 'ProVeg', 'm-campus-v-cup', 'reaction', 'Plant-Based Universities', T('2026-09-20', '12:00'), 'Ik haak aan', true, 'r10'),
+  N('n5', 'ProVeg', 'm-campus-v-cup', 'reaction', 'Lidl', T('2026-09-23', '17:10'), 'Ik kan mee verspreiden', false, 'r11'),
+  N('n6', 'ProVeg', 'm-zomerbar', 'reaction', 'Plant-Based Universities', T('2026-09-24', '11:40'), 'Ik haak aan', false, 'r13'),
+  N('n7', COORDINATOR_ORG, 'm-voorschrift', 'signal', 'Anoniem', T('2026-09-19', '10:20'), 'Slechte timing', true, 's1'),
+  N('n8', COORDINATOR_ORG, 'm-bonen', 'signal', 'Lidl', T('2026-09-21', '16:00'), 'Mogelijke tegenstrijdigheid', false, 's2'),
+  N('n9', COORDINATOR_ORG, 'm-zomerbar', 'new_moment', 'ProVeg', T('2026-09-24', '09:15'), undefined, false, 'm-zomerbar'),
 ];
 
 export function seedState(): AppState {

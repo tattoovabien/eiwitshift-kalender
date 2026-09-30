@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bell, ChartGantt, ChevronDown, LayoutDashboard, Leaf, List, LogIn, LogOut, Plus, RotateCcw, Rss, UserRound } from 'lucide-react';
+import { Bell, ChartGantt, ChevronDown, LayoutDashboard, Leaf, List, LogIn, LogOut, Pencil, Plus, RotateCcw, Rss, UserRound } from 'lucide-react';
+import { Modal, useToast } from './ui';
 import { ROLES } from '../roles';
 import { useStore } from '../store';
 import type { RoleId } from '../types';
@@ -187,6 +188,7 @@ export function Header({
 function AccountMenu() {
   const { live, role } = useStore();
   const [open, setOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -242,9 +244,22 @@ function AccountMenu() {
               {role.id === 'coordinator' && ' · coördinator'}
             </p>
           </div>
+          {p && (
+            <button
+              type="button"
+              className="mt-1 flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-sm font-semibold text-gray-800 hover:bg-gray-100"
+              onClick={() => {
+                setOpen(false);
+                setRenaming(true);
+              }}
+            >
+              <Pencil className="size-4" aria-hidden="true" />
+              Naam wijzigen
+            </button>
+          )}
           <button
             type="button"
-            className="mt-1 flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-sm font-semibold text-gray-800 hover:bg-gray-100"
+            className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-sm font-semibold text-gray-800 hover:bg-gray-100"
             onClick={() => {
               setOpen(false);
               live.signOut();
@@ -255,6 +270,59 @@ function AccountMenu() {
           </button>
         </div>
       )}
+      {renaming && p && <RenameDialog current={p.name} onClose={() => setRenaming(false)} />}
     </div>
+  );
+}
+
+/** Change the name other partners see next to your reactions and comments. */
+function RenameDialog({ current, onClose }: { current: string; onClose: () => void }) {
+  const { live } = useStore();
+  const toast = useToast();
+  const [name, setName] = useState(current);
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    const clean = name.trim();
+    if (!clean || !live) return;
+    setBusy(true);
+    try {
+      await live.saveProfile({ name: clean });
+      toast('Je naam is aangepast');
+      onClose();
+    } catch (e) {
+      toast(`Opslaan mislukt: ${(e as Error).message}`, 'warning');
+    }
+    setBusy(false);
+  };
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="sm"
+      title="Naam wijzigen"
+      footer={
+        <>
+          <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>
+            Annuleren
+          </button>
+          <button type="button" className="btn-primary" onClick={save} disabled={busy || !name.trim()}>
+            Bewaar
+          </button>
+        </>
+      }
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          save();
+        }}
+      >
+        <label htmlFor="rename" className="field-label">
+          Je naam
+        </label>
+        <input id="rename" className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" data-autofocus />
+        <p className="mt-2 text-sm text-gray-600">Andere partners zien deze naam bij je reacties, ook bij je eerdere reacties.</p>
+      </form>
+    </Modal>
   );
 }

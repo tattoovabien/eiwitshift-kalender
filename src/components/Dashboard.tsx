@@ -8,6 +8,7 @@ import {
   Handshake,
   Mail,
   Pencil,
+  RotateCcw,
   Plus,
   Send,
   Settings2,
@@ -20,8 +21,16 @@ import type { FieldDef, FieldType, Moment } from '../types';
 import { newId, REACTION_LABEL, useStore } from '../store';
 import { isPast, organiserLabel, whenLabel } from '../lib/moments';
 import { fmtRelative, todayISO } from '../lib/dates';
-import { digestEmail, emailToText, introEmail } from '../lib/emails';
-import { buildCsv, buildIcs, copyText, downloadFile } from '../lib/files';
+import {
+  applyDigestEdits,
+  digestEditsFrom,
+  digestEmail,
+  DIGEST_MESSAGE_HEADING,
+  emailToText,
+  introEmail,
+  type DigestEdits,
+} from '../lib/emails';
+import { buildCsv, buildIcs, buildMomentsXlsx, copyText, downloadFile } from '../lib/files';
 import { EmailPreview } from './EmailPreview';
 import { AccessManager } from './AccessManager';
 import { sendDigestNow } from '../data/live';
@@ -124,18 +133,18 @@ function Matches({ onOpen }: { onOpen: (id: string) => void }) {
     () =>
       state.moments
         .map((m) => ({ m, rs: state.reactions.filter((r) => r.momentId === m.id) }))
-        .filter((x) => x.rs.length >= 2)
-        .sort((a, b) => b.rs.length - a.rs.length),
+        .filter((x) => x.rs.length >= 1)
+        .sort((a, b) => b.rs.length - a.rs.length || (a.m.title < b.m.title ? -1 : 1)),
     [state.moments, state.reactions],
   );
 
   return (
     <div className="space-y-4">
       <p className="text-gray-700">
-        Momenten waar minstens twee partners op reageerden, gesorteerd op aantal. Zo zie je waar samenwerking ontstaat en wie nog
-        niet met elkaar in contact is.
+        Momenten waar minstens één partner op reageerde, met de meeste reacties bovenaan. Zo zie je waar samenwerking ontstaat en
+        wie nog niet met elkaar in contact is.
       </p>
-      {matches.length === 0 && <p className="card p-6 text-gray-600">Nog geen momenten met twee of meer reacties.</p>}
+      {matches.length === 0 && <p className="card p-6 text-gray-600">Nog geen reacties op momenten.</p>}
       <ul className="grid gap-4">
         {matches.map(({ m, rs }) => {
           const notInContact = rs.filter((r) => !r.inContact);
@@ -144,7 +153,7 @@ function Matches({ onOpen }: { onOpen: (id: string) => void }) {
               <div className="flex items-start gap-4">
                 <div className="flex size-14 shrink-0 flex-col items-center justify-center rounded-xl bg-brand-700 text-white">
                   <span className="text-2xl leading-none font-bold">{rs.length}</span>
-                  <span className="text-[10px] font-semibold uppercase">reacties</span>
+                  <span className="text-[10px] font-semibold uppercase">{rs.length === 1 ? 'reactie' : 'reacties'}</span>
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -498,15 +507,28 @@ function FieldRow({ f, onDelete }: { f: FieldDef; onDelete: () => void }) {
 function Digest() {
   const { state, live } = useStore();
   const toast = useToast();
-  const email = useMemo(() => digestEmail(state), [state]);
+  // The editor works on a snapshot of the automatic digest, so edits don't jump when the calendar changes.
+  const [base, setBase] = useState(() => digestEmail(state));
+  const [edits, setEdits] = useState<DigestEdits>(() => digestEditsFrom(base));
+  const email = useMemo(() => applyDigestEdits(base, edits), [base, edits]);
   const [copied, setCopied] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [sending, setSending] = useState(false);
 
+  const setField = <K extends keyof DigestEdits>(k: K, v: DigestEdits[K]) => setEdits((e) => ({ ...e, [k]: v }));
+  const toggleItem = (key: string) =>
+    setEdits((e) => ({ ...e, excluded: e.excluded.includes(key) ? e.excluded.filter((x) => x !== key) : [...e.excluded, key] }));
+  const rebuild = () => {
+    const fresh = digestEmail(state);
+    setBase(fresh);
+    setEdits(digestEditsFrom(fresh));
+    toast('Digest opnieuw opgebouwd uit de kalender', 'info');
+  };
+
   const send = async () => {
     setSending(true);
     try {
-      const n = __LIVE__ ? await sendDigestNow() : 0;
+      const n = __LIVE__ ? await sendDigestNow(email) : 0;
       toast(`Digest verstuurd naar ${n} ${n === 1 ? 'persoon' : 'personen'}`);
       setConfirm(false);
     } catch (e) {
@@ -514,44 +536,120 @@ function Digest() {
     }
     setSending(false);
   };
+
+  const itemSections = base.sections.map((s, si) => ({ s, si })).filter(({ s }) => s.items);
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="max-w-2xl">
-          <p className="text-gray-700">
-            De maandelijkse ‘nudge’-mail aan alle partners, automatisch samengesteld uit de kalender.
-            {live
-              ? ' Met ‘Verstuur digest nu’ gaat hij meteen naar alle gebruikers met toegang.'
-              : ' In de echte versie vertrekt die op de eerste werkdag van de maand.'}
-          </p>
-          <p className="mt-2 text-sm text-gray-600">
-            <strong className="text-gray-900">Onderwerp:</strong> {email.subject}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-        {live && (
-          <button type="button" className="btn-primary" onClick={() => setConfirm(true)}>
-            <Send className="size-4" aria-hidden="true" />
-            Verstuur digest nu
+      <p className="max-w-3xl text-gray-700">
+        De maandelijkse ‘nudge’-mail aan alle partners, automatisch samengesteld uit de kalender. Pas hem gerust aan voor je hem
+        verstuurt.
+        {!live && ' In de echte versie vertrekt die op de eerste werkdag van de maand.'}
+      </p>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
+        {/* Editor */}
+        <form className="card h-fit space-y-4 bg-gray-50 p-4" onSubmit={(e) => e.preventDefault()}>
+          <h3 className="flex items-center gap-2 font-bold text-gray-900">
+            <Pencil className="size-4" aria-hidden="true" /> Aanpassen
+          </h3>
+          <div>
+            <label htmlFor="dg-subject" className="field-label">
+              Onderwerp
+            </label>
+            <input id="dg-subject" className="input" value={edits.subject} onChange={(e) => setField('subject', e.target.value)} />
+          </div>
+          <div>
+            <label htmlFor="dg-intro" className="field-label">
+              Inleiding
+            </label>
+            <textarea id="dg-intro" className="input" rows={4} value={edits.intro} onChange={(e) => setField('intro', e.target.value)} />
+          </div>
+          <div>
+            <label htmlFor="dg-message" className="field-label">
+              Eigen bericht <span className="font-normal text-gray-600">(optioneel)</span>
+            </label>
+            <textarea
+              id="dg-message"
+              className="input"
+              rows={3}
+              value={edits.message}
+              onChange={(e) => setField('message', e.target.value)}
+              placeholder="bv. Nieuw: vanaf nu kan je ook … / Save the date: …"
+            />
+            <p className="mt-1 text-xs text-gray-600">Verschijnt als apart blok ‘{DIGEST_MESSAGE_HEADING}’. Een lege regel begint een nieuwe alinea.</p>
+          </div>
+
+          {itemSections.map(({ s, si }) => (
+            <fieldset key={si}>
+              <legend className="field-label">{s.heading}</legend>
+              {s.items!.length === 0 ? (
+                <p className="text-sm text-gray-600">{s.empty}</p>
+              ) : (
+                <ul className="space-y-1">
+                  {s.items!.map((it, ii) => {
+                    const key = `${si}:${ii}`;
+                    return (
+                      <li key={key}>
+                        <label className="flex min-h-10 cursor-pointer items-start gap-3 rounded-lg px-1 py-1.5 text-sm hover:bg-white">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 size-5 shrink-0 accent-brand-700"
+                            checked={!edits.excluded.includes(key)}
+                            onChange={() => toggleItem(key)}
+                          />
+                          <span className="min-w-0">
+                            <span className="block font-medium text-gray-900">{it.title}</span>
+                            <span className="block text-xs text-gray-600">{it.meta}</span>
+                          </span>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </fieldset>
+          ))}
+
+          <div>
+            <label htmlFor="dg-closing" className="field-label">
+              Vul de agenda aan
+            </label>
+            <textarea id="dg-closing" className="input" rows={4} value={edits.closing} onChange={(e) => setField('closing', e.target.value)} />
+          </div>
+
+          <button type="button" className="btn-ghost w-full" onClick={rebuild}>
+            <RotateCcw className="size-4" aria-hidden="true" /> Opnieuw opbouwen uit de kalender
           </button>
-        )}
-        <button
-          type="button"
-          className={live ? 'btn-secondary' : 'btn-primary'}
-          onClick={async () => {
-            const ok = await copyText(emailToText(email));
-            setCopied(ok);
-            toast(ok ? 'Digest gekopieerd als tekst' : 'Kopiëren lukte niet', ok ? 'success' : 'warning');
-            if (ok) setTimeout(() => setCopied(false), 2000);
-          }}
-        >
-          {copied ? <Check className="size-4" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}
-          Kopieer als tekst
-        </button>
+        </form>
+
+        {/* Preview */}
+        <div className="min-w-0 space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {live && (
+              <button type="button" className="btn-primary" onClick={() => setConfirm(true)}>
+                <Send className="size-4" aria-hidden="true" />
+                Verstuur digest nu
+              </button>
+            )}
+            <button
+              type="button"
+              className={live ? 'btn-secondary' : 'btn-primary'}
+              onClick={async () => {
+                const ok = await copyText(emailToText(email));
+                setCopied(ok);
+                toast(ok ? 'Digest gekopieerd als tekst' : 'Kopiëren lukte niet', ok ? 'success' : 'warning');
+                if (ok) setTimeout(() => setCopied(false), 2000);
+              }}
+            >
+              {copied ? <Check className="size-4" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}
+              Kopieer als tekst
+            </button>
+          </div>
+          <EmailPreview email={email} />
+          {!live && <SimNote>Niets wordt echt verstuurd. De inhoud verandert mee met wat er in de kalender staat.</SimNote>}
         </div>
       </div>
-      <EmailPreview email={email} />
-      {!live && <SimNote>Niets wordt echt verstuurd. De inhoud verandert mee met wat er in de kalender staat.</SimNote>}
       <Modal
         open={confirm}
         onClose={() => setConfirm(false)}
@@ -585,22 +683,39 @@ function Export() {
     <div className="grid gap-4 md:grid-cols-2">
       <div className="card p-5">
         <FileSpreadsheet className="size-8 text-brand-700" aria-hidden="true" />
-        <h3 className="mt-2 text-lg font-bold text-gray-900">Export CSV</h3>
+        <h3 className="mt-2 text-lg font-bold text-gray-900">Alle momenten als tabel</h3>
         <p className="mt-1 text-gray-700">
-          Alle {state.moments.length} momenten met alle velden, reacties en extra velden. Opent in Excel (puntkomma als
-          scheidingsteken).
+          Alle {state.moments.length} momenten met alle velden, reacties en extra velden. Het Excel-bestand heeft een vaste koprij,
+          filterknoppen en echte datums. CSV is voor andere programma’s.
         </p>
-        <button
-          type="button"
-          className="btn-primary mt-4"
-          onClick={() => {
-            downloadFile(`eiwitshift-momenten-${date}.csv`, buildCsv(state.moments, state.reactions, state.fieldDefs), 'text/csv;charset=utf-8');
-            toast('CSV gedownload');
-          }}
-        >
-          <Download className="size-4" aria-hidden="true" />
-          Download CSV
-        </button>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => {
+              downloadFile(
+                `eiwitshift-momenten-${date}.xlsx`,
+                buildMomentsXlsx(state.moments, state.reactions, state.fieldDefs),
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+              );
+              toast('Excel-bestand gedownload');
+            }}
+          >
+            <Download className="size-4" aria-hidden="true" />
+            Download Excel (.xlsx)
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              downloadFile(`eiwitshift-momenten-${date}.csv`, buildCsv(state.moments, state.reactions, state.fieldDefs), 'text/csv;charset=utf-8');
+              toast('CSV gedownload');
+            }}
+          >
+            <Download className="size-4" aria-hidden="true" />
+            Download CSV
+          </button>
+        </div>
       </div>
       <div className="card p-5">
         <CalendarDays className="size-8 text-brand-700" aria-hidden="true" />

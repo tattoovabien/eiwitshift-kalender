@@ -3,6 +3,7 @@
 import type { Action } from '../store';
 import type { AppState, Profile } from '../types';
 import type { PrefillResult } from '../lib/prefill';
+import type { Email } from '../lib/emails';
 import { sb } from '../lib/supabase';
 import { STATE_VERSION } from '../seed';
 import {
@@ -131,6 +132,12 @@ export async function applyRemote(action: Action, prev: AppState): Promise<void>
     case 'addComment':
       must(await sb().from('comments').insert({ id: action.id, moment_id: action.momentId, text: action.text }));
       return;
+    case 'editComment':
+      mustChange(await sb().from('comments').update({ text: action.text }).eq('id', action.id).select('id'));
+      return;
+    case 'deleteComment':
+      mustChange(await sb().from('comments').delete().eq('id', action.id).select('id'));
+      return;
     case 'addSignal':
       // No .select() afterwards: partners are not allowed to read signals back.
       must(
@@ -244,9 +251,11 @@ export async function readLinkRemote(url: string): Promise<ReadLinkResponse> {
   return data as ReadLinkResponse;
 }
 
-/** Sends the monthly digest to every active user now (edge function, coordinators only). */
-export async function sendDigestNow(): Promise<number> {
-  const { data, error } = await sb().functions.invoke('digest', { body: {} });
+/** Sends the digest (with the coordinator's edits) to every active user now (edge function, coordinators only). */
+export async function sendDigestNow(email?: Pick<Email, 'subject' | 'sections'>): Promise<number> {
+  const { data, error } = await sb().functions.invoke('digest', {
+    body: email ? { email: { subject: email.subject, sections: email.sections } } : {},
+  });
   if (error) throw new Error(error.message);
   return (data as { sent: number }).sent;
 }

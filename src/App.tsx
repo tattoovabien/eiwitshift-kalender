@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useStore } from './store';
 import { getRole, isForMe } from './roles';
-import type { RoleId } from './types';
+import type { AppNotification, RoleId } from './types';
 import { EMPTY_FILTERS, isPast, matchesFilters, type Filters } from './lib/moments';
 import { todayISO } from './lib/dates';
 import { DemoBanner, Header, type View } from './components/Header';
 import { FilterBar } from './components/FilterBar';
 import { ListView } from './components/ListView';
 import { TimelineView } from './components/TimelineView';
-import { DetailPanel } from './components/DetailPanel';
+import { DetailPanel, type DetailFocus } from './components/DetailPanel';
 import { MomentForm } from './components/MomentForm';
 import { NotificationEmailModal, NotificationsPanel } from './components/Notifications';
 import { Dashboard, type DashTab } from './components/Dashboard';
@@ -124,8 +124,12 @@ export default function App() {
 
   const unread = state.notifications.filter((n) => isForMe(n, role) && !n.read).length;
 
+  const [focus, setFocus] = useState<DetailFocus | null>(null);
   const openMoment = useCallback((id: string) => navigate({ momentId: id }), [navigate]);
-  const closeMoment = useCallback(() => navigate({ momentId: null }, true), [navigate]);
+  const closeMoment = useCallback(() => {
+    setFocus(null);
+    navigate({ momentId: null }, true);
+  }, [navigate]);
 
   const changeRole = (r: RoleId) => {
     dispatch({ type: 'setRole', role: r });
@@ -139,6 +143,23 @@ export default function App() {
     dispatch({ type: 'markRead', id });
     setNotifOpen(false);
     setPreviewId(id);
+  };
+
+  /** A notification was clicked: show what happened (the moment, scrolled to the reaction/comment/signal). */
+  const openNotification = (n: AppNotification) => {
+    if (!n.read) dispatch({ type: 'markRead', id: n.id });
+    setNotifOpen(false);
+    if (n.kind === 'access_request') {
+      navigate({ view: 'dashboard', tab: 'toegang', momentId: null });
+      return;
+    }
+    const m = n.momentId ? state.moments.find((x) => x.id === n.momentId) : undefined;
+    if (!m) {
+      toast('Dit moment bestaat niet meer', 'info');
+      return;
+    }
+    setFocus({ kind: n.kind, refId: n.refId, fromOrg: n.fromOrg, detail: n.detail });
+    navigate({ view: route.view === 'dashboard' ? 'overzicht' : route.view, momentId: m.id });
   };
 
   const main = (() => {
@@ -225,7 +246,12 @@ export default function App() {
         </div>
       </footer>
 
-      <NotificationsPanel open={notifOpen} onClose={() => setNotifOpen(false)} onPreview={openPreview} />
+      <NotificationsPanel
+        open={notifOpen}
+        onClose={() => setNotifOpen(false)}
+        onOpen={openNotification}
+        onPreview={openPreview}
+      />
       <NotificationEmailModal
         notificationId={previewId}
         onClose={() => setPreviewId(null)}
@@ -240,6 +266,7 @@ export default function App() {
       />
       <DetailPanel
         momentId={route.momentId}
+        focus={focus}
         onClose={closeMoment}
         onEdit={(id) => setForm({ open: true, editId: id })}
       />

@@ -32,8 +32,13 @@ export interface Email {
   footer: string;
 }
 
-const FOOTER_PARTNER =
-  'Je krijgt deze e-mail als partner van de Green Deal Eiwitshift. Meldingen aanpassen of uitschrijven kan via je profiel in de kalender.';
+const FOOTER_PARTNER = 'Je krijgt deze e-mail als gebruiker van de Eiwitshift-kalender van de Green Deal Eiwitshift.';
+
+/** Extra context that is not stored on the notification itself (looked up by refId). */
+export interface NotificationExtra {
+  /** The text a partner wrote with a signal (coordinators only). */
+  signalNote?: string;
+}
 
 function momentItem(m: Moment, note?: string): EmailItem {
   return { title: m.title, meta: `${whenLabel(m)} · ${m.type} · ${organiserLabel(m)}`, note };
@@ -55,7 +60,7 @@ export function notificationTitle(n: AppNotification, m: Moment | undefined): st
   }
 }
 
-export function notificationLine(n: AppNotification): string {
+export function notificationLine(n: AppNotification, extra: NotificationExtra = {}): string {
   switch (n.kind) {
     case 'reaction':
       return `${n.fromOrg} koos “${n.detail ?? 'reageerde'}”`;
@@ -63,14 +68,16 @@ export function notificationLine(n: AppNotification): string {
       return `${n.fromOrg}: “${n.detail ?? ''}”`;
     case 'new_moment':
       return `Toegevoegd door ${n.fromOrg}`;
-    case 'signal':
-      return `${n.detail ?? 'Bezorgdheid'} · gemeld door ${n.fromOrg === 'Anoniem' ? 'een anonieme partner' : n.fromOrg}`;
+    case 'signal': {
+      const note = extra.signalNote ? `: “${extra.signalNote}”` : '';
+      return `${n.detail ?? 'Bezorgdheid'}${note} · gemeld door ${n.fromOrg === 'Anoniem' ? 'een anonieme partner' : n.fromOrg}`;
+    }
     case 'access_request':
       return `${n.detail ?? 'Iemand'} wil inloggen. Keur goed via Dashboard → Toegang.`;
   }
 }
 
-export function notificationEmail(n: AppNotification, m: Moment | undefined): Email {
+export function notificationEmail(n: AppNotification, m: Moment | undefined, extra: NotificationExtra = {}): Email {
   const to = n.toOrg === COORDINATOR_ORG ? 'Coördinatoren Green Deal Eiwitshift' : `${n.toOrg} (contactpersoon)`;
   const sections: EmailSection[] = [];
   if (n.kind === 'reaction') {
@@ -99,6 +106,7 @@ export function notificationEmail(n: AppNotification, m: Moment | undefined): Em
     sections.push({
       paragraphs: [
         `Er is een bezorgdheid gemeld: “${n.detail}”. Deze melding is enkel zichtbaar voor de coördinatoren.`,
+        ...(extra.signalNote ? [`Toelichting: “${extra.signalNote}”`] : ['Er werd geen toelichting gegeven.']),
         n.fromOrg === 'Anoniem' ? 'De melder koos om anoniem te blijven.' : `Gemeld door ${n.fromOrg}.`,
       ],
     });
@@ -216,6 +224,83 @@ export function introEmail(m: Moment, orgs: string[]): Email {
     ],
     footer: 'Hartelijke groet, de coördinatoren van de Green Deal Eiwitshift',
   };
+}
+
+// ---------------------------------------------------------------------------
+// Editing the digest before sending (coordinators)
+
+export interface DigestEdits {
+  subject: string;
+  /** The first paragraph ("Hier is je maandelijkse overzicht …"). */
+  intro: string;
+  /** Optional own message, shown as a separate block after the intro. */
+  message: string;
+  /** Paragraph text of the "Vul de agenda aan" section. */
+  closing: string;
+  /** Items left out, as "sectionIndex:itemIndex". */
+  excluded: string[];
+}
+
+export const DIGEST_MESSAGE_HEADING = 'Bericht van de coördinatoren';
+
+/** Start values for the editor, taken from the automatic digest. */
+export function digestEditsFrom(base: Email): DigestEdits {
+  const closing = base.sections.find((s) => s.heading === 'Vul de agenda aan');
+  return {
+    subject: base.subject,
+    intro: (base.sections[0]?.paragraphs ?? []).join(PARAGRAPH_BREAK),
+    message: '',
+    closing: (closing?.paragraphs ?? []).join(PARAGRAPH_BREAK),
+    excluded: [],
+  };
+}
+
+/** Paragraphs are separated by an empty line in the editor's text boxes. */
+const PARAGRAPH_BREAK = String.fromCharCode(10, 10);
+
+const paragraphs = (text: string) =>
+  text
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+/** The automatic digest with the coordinator's changes applied. */
+export function applyDigestEdits(base: Email, edits: DigestEdits): Email {
+  const excluded = new Set(edits.excluded);
+  const sections: EmailSection[] = base.sections.map((s, si) => {
+    if (si === 0) return { ...s, paragraphs: paragraphs(edits.intro) };
+    if (s.heading === 'Vul de agenda aan') return { ...s, paragraphs: paragraphs(edits.closing) };
+    if (s.items) return { ...s, items: s.items.filter((_, ii) => !excluded.has(`${si}:${ii}`)) };
+    return s;
+  });
+  const message = paragraphs(edits.message);
+  if (message.length) sections.splice(1, 0, { heading: DIGEST_MESSAGE_HEADING, paragraphs: message });
+  return { ...base, subject: edits.subject.trim() || base.subject, sections };
+}
+
+const cap = (v: unknown, max: number): string => (typeof v === 'string' ? v.slice(0, max) : '');
+
+/** Server-side check of an edited e-mail sent by the browser: shape and lengths only. */
+export function sanitizeEmail(input: unknown): Pick<Email, 'subject' | 'sections'> | null {
+  if (!input || typeof input !== 'object') return null;
+  const o = input as Record<string, unknown>;
+  const subject = cap(o.subject, 200).trim();
+  if (!subject || !Array.isArray(o.sections)) return null;
+  const sections: EmailSection[] = o.sections.slice(0, 12).map((raw) => {
+    const s = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+    const section: EmailSection = {};
+    if (s.heading) section.heading = cap(s.heading, 120);
+    if (Array.isArray(s.paragraphs)) section.paragraphs = s.paragraphs.slice(0, 20).map((p) => cap(p, 3000)).filter(Boolean);
+    if (Array.isArray(s.items)) {
+      section.items = s.items.slice(0, 100).map((it) => {
+        const i = (it && typeof it === 'object' ? it : {}) as Record<string, unknown>;
+        return { title: cap(i.title, 300), meta: cap(i.meta, 300), ...(i.note ? { note: cap(i.note, 600) } : {}) };
+      });
+    }
+    if (s.empty) section.empty = cap(s.empty, 300);
+    return section;
+  });
+  return { subject, sections };
 }
 
 /** Plain-text version. `withHeaders` adds subject/from/to lines (for "kopieer als tekst"). */

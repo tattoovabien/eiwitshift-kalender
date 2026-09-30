@@ -1,7 +1,7 @@
 // "Verstuur digest nu" (Dashboard → Digest-preview). Coordinators only.
-// Builds the same digest as the in-app preview and sends it to every active user.
+// Sends the digest (as edited by the coordinator, or built automatically) to every active user.
 import { adminClient, APP_URL, cors, json, personalise, sendMail } from '../_shared/common.ts';
-import { digestEmail } from '../_shared/app/lib/emails.ts';
+import { digestEmail, sanitizeEmail } from '../_shared/app/lib/emails.ts';
 import { momentFromRow, reactionFromRow } from '../_shared/app/data/mappers.ts';
 import type { AppState } from '../_shared/app/types.ts';
 
@@ -16,6 +16,13 @@ Deno.serve(async (req) => {
   const { data: me } = await db.from('profiles').select('status, is_coordinator').eq('user_id', auth.user.id).maybeSingle();
   if (!me || me.status !== 'active' || !me.is_coordinator) {
     return json({ error: 'Enkel coördinatoren kunnen de digest versturen' }, 403);
+  }
+
+  let body: { email?: unknown } = {};
+  try {
+    body = await req.json();
+  } catch {
+    // no body: send the automatic digest
   }
 
   const [moments, reactions, people] = await Promise.all([
@@ -37,6 +44,13 @@ Deno.serve(async (req) => {
     fieldDefs: [],
   } satisfies AppState;
   const email = digestEmail(state);
+  // The coordinator may have edited subject and content; sender, recipients and footer stay ours.
+  if (body.email !== undefined) {
+    const edited = sanitizeEmail(body.email);
+    if (!edited) return json({ error: 'De aangepaste digest is ongeldig' }, 400);
+    email.subject = edited.subject;
+    email.sections = edited.sections;
+  }
   email.ctaUrl = APP_URL;
 
   let sent = 0;

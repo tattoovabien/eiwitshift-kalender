@@ -69,10 +69,23 @@ export function AccessManager() {
         ))}
       </datalist>
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="max-w-3xl text-gray-700">
-          Wie mag inloggen? Mensen op de toegangslijst komen meteen binnen. Anderen vragen toegang aan en verschijnen hieronder.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <ol className="grid max-w-4xl flex-1 gap-2 text-sm text-gray-800 sm:grid-cols-3">
+          <li className="rounded-xl bg-gray-50 p-3 ring-1 ring-gray-200 ring-inset">
+            <strong className="block text-gray-900">1. Toegangslijst</strong>
+            Wie je <em>vooraf</em> binnenlaat: een e-mailadres of een heel domein. Er wordt nog niets aangemaakt of verstuurd; die
+            persoon komt meteen binnen zodra die zelf voor het eerst inlogt.
+          </li>
+          <li className="rounded-xl bg-gray-50 p-3 ring-1 ring-gray-200 ring-inset">
+            <strong className="block text-gray-900">2. Aanvragen</strong>
+            Mensen die inlogden maar niet op de toegangslijst stonden. Jij keurt goed en kiest hun organisatie.
+          </li>
+          <li className="rounded-xl bg-gray-50 p-3 ring-1 ring-gray-200 ring-inset">
+            <strong className="block text-gray-900">3. Gebruikers</strong>
+            Iedereen die al minstens één keer inlogde en dus een account heeft. Hier maak je iemand coördinator of trek je
+            toegang in.
+          </li>
+        </ol>
         <button type="button" className="btn-secondary" onClick={load}>
           <RefreshCw className="size-4" aria-hidden="true" /> Vernieuwen
         </button>
@@ -106,7 +119,7 @@ export function AccessManager() {
       </section>
 
       <section>
-        <SectionTitle>Toegangslijst</SectionTitle>
+        <SectionTitle>Toegangslijst: vooraf toegelaten</SectionTitle>
         <p className="mb-3 text-sm text-gray-700">
           Zet hier vooraf de e-mailadressen van Enya en Kristof, als coördinator van Departement Omgeving. Voor een partner kan je
           ook een heel domein toevoegen (bv. <code className="rounded bg-gray-100 px-1">@proveg.com</code>).
@@ -123,6 +136,7 @@ export function AccessManager() {
                     → {r.org}
                     {r.isCoordinator && ' · coördinator'}
                   </span>
+                  <RuleStatus pattern={r.pattern} profiles={profiles} />
                 </span>
                 <button
                   type="button"
@@ -140,7 +154,7 @@ export function AccessManager() {
 
       <section>
         <SectionTitle>
-          Gebruikers <span className="font-normal text-gray-600">({others.length})</span>
+          Gebruikers: mensen met een account <span className="font-normal text-gray-600">({others.length})</span>
         </SectionTitle>
         <ul className="divide-y divide-gray-100 rounded-xl border border-gray-200">
           {others.map((p) => {
@@ -300,5 +314,28 @@ function RuleForm({ onAdd }: { onAdd: (rule: AccessRule) => void }) {
         <p className="text-sm text-red-700 sm:col-span-3">Een publiek domein zoals {clean} kan je niet in zijn geheel toelaten.</p>
       )}
     </form>
+  );
+}
+
+/** Has anyone matching this access rule logged in yet? */
+function RuleStatus({ pattern, profiles }: { pattern: string; profiles: Profile[] }) {
+  const matches = pattern.startsWith('@')
+    ? profiles.filter((p) => p.email.endsWith(pattern)).length
+    : profiles.filter((p) => p.email === pattern).length;
+  const text = pattern.startsWith('@')
+    ? matches === 0
+      ? 'nog niemand ingelogd'
+      : `${matches} ${matches === 1 ? 'account' : 'accounts'}`
+    : matches
+      ? 'heeft al een account'
+      : 'nog niet ingelogd';
+  return (
+    <span
+      className={`ml-2 inline-block rounded-md px-1.5 py-0.5 text-xs font-semibold ${
+        matches ? 'bg-brand-50 text-brand-800' : 'bg-gray-100 text-gray-700'
+      }`}
+    >
+      {text}
+    </span>
   );
 }

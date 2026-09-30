@@ -144,3 +144,25 @@
     transparent 5px 10px
   );
 }
+
+/* A notification was clicked: briefly light up what it is about. */
+.focus-flash {
+  animation: focus-flash 3s ease-out;
+  border-radius: 0.75rem;
+}
+@keyframes focus-flash {
+  0%,
+  60% {
+    box-shadow: 0 0 0 3px #f59e0b, 0 0 0 7px rgba(245, 158, 11, 0.25);
+    background-color: #fffbeb;
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .focus-flash {
+    animation: none;
+    box-shadow: 0 0 0 3px #f59e0b;
+  }
+}

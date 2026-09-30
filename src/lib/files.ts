@@ -1,11 +1,12 @@
-// Downloads, clipboard, .ics and .csv generation.
+// Downloads, clipboard, and the .ics / .csv / .xlsx exports.
 import type { FieldDef, Moment, Reaction } from '../types';
 import { whenLabel } from './moments';
+import { buildXlsx, type Cell } from './xlsx';
 
 export { buildIcs } from './ics';
 
-export function downloadFile(filename: string, content: string, mime: string) {
-  const blob = new Blob([content], { type: mime });
+export function downloadFile(filename: string, content: string | Uint8Array, mime: string) {
+  const blob = new Blob([content as BlobPart], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -54,15 +55,12 @@ export function slugify(s: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// CSV (semicolon separated + BOM so Excel with Belgian settings opens it cleanly)
+// Export: one table, written as CSV or as Excel
 
-function csvCell(v: unknown): string {
-  const s = v === undefined || v === null ? '' : String(v);
-  return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-export function buildCsv(moments: Moment[], reactions: Reaction[], fieldDefs: FieldDef[]): string {
+/** Header + rows of the export. Dates are { date } so Excel gets real date cells. */
+export function exportTable(moments: Moment[], reactions: Reaction[], fieldDefs: FieldDef[]): { header: string[]; rows: Cell[][] } {
   const yn = (b: boolean) => (b ? 'ja' : 'nee');
+  const date = (iso: string | null | undefined): Cell => (iso ? { date: iso } : '');
   const header = [
     'Titel',
     'Start',
@@ -88,12 +86,12 @@ export function buildCsv(moments: Moment[], reactions: Reaction[], fieldDefs: Fi
     'Verspreiden mee',
     ...fieldDefs.map((d) => d.name),
   ];
-  const rows = moments.map((m) => {
+  const rows = moments.map((m): Cell[] => {
     const rs = reactions.filter((r) => r.momentId === m.id);
     return [
       m.title,
-      m.startDate ?? '',
-      m.endDate ?? '',
+      date(m.startDate),
+      date(m.endDate),
       yn(m.dateUnsure),
       yn(m.ongoing),
       whenLabel(m),
@@ -116,5 +114,21 @@ export function buildCsv(moments: Moment[], reactions: Reaction[], fieldDefs: Fi
       ...fieldDefs.map((d) => m.customFields[d.id] ?? ''),
     ];
   });
+  return { header, rows };
+}
+
+// CSV: semicolon separated + BOM, so Excel with Belgian settings opens it cleanly.
+function csvCell(v: Cell): string {
+  const s = v === undefined || v === null ? '' : typeof v === 'object' ? v.date : String(v);
+  return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+export function buildCsv(moments: Moment[], reactions: Reaction[], fieldDefs: FieldDef[]): string {
+  const { header, rows } = exportTable(moments, reactions, fieldDefs);
   return '\uFEFF' + [header, ...rows].map((r) => r.map(csvCell).join(';')).join('\r\n') + '\r\n';
+}
+
+export function buildMomentsXlsx(moments: Moment[], reactions: Reaction[], fieldDefs: FieldDef[]): Uint8Array {
+  const { header, rows } = exportTable(moments, reactions, fieldDefs);
+  return buildXlsx('Momenten', header, rows);
 }

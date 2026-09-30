@@ -34,7 +34,13 @@ Deno.serve(async (req) => {
   const { data: people, error: peopleError } = await query;
   if (peopleError) return json({ error: peopleError.message }, 500);
 
-  const email = notificationEmail(notificationFromRow(n), moment ? momentFromRow(moment) : undefined);
+  // A signal's own text lives on the signal (only coordinators receive these mails).
+  const signalNote =
+    n.kind === 'signal' && n.ref_id
+      ? ((await db.from('signals').select('note').eq('id', n.ref_id).maybeSingle()).data?.note ?? undefined)
+      : undefined;
+
+  const email = notificationEmail(notificationFromRow(n), moment ? momentFromRow(moment) : undefined, { signalNote });
   email.ctaUrl =
     n.kind === 'access_request'
       ? `${APP_URL}#/dashboard/toegang`
