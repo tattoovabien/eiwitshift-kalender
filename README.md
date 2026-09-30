@@ -36,7 +36,7 @@ Wissel bovenaan via **Demo-rol** tussen *Coördinator (Omgeving)*, *Partner: Lid
 5. **Coördinator: matches en digest (1 min)**
    - Demo-rol → *Coördinator (Omgeving)* → **Dashboard**.
    - *Matches*: momenten waar minstens één partner op reageerde, de drukste bovenaan, met wie al in contact is. Toon *Breng in contact*.
-   - *Digest-preview*: de maandelijkse nudge-mail met “komende 2 maanden”, “zoekt partners”, “populairste momenten” en “vul de agenda aan”. Pas links het onderwerp aan, voeg een eigen bericht toe of vink een moment uit, en zie de preview meteen veranderen. Klik op *Kopieer als tekst*.
+   - *Digest-preview*: de maandelijkse nudge-mail met “komende 2 maanden” (momenten die partners zoeken krijgen het label 🤝), “populairste momenten” en “vul de agenda aan”. Pas links het onderwerp, de aanspreking of de inleiding aan, of vink een moment uit, en zie de preview meteen veranderen. Toon de schakelaar *Elke maand automatisch versturen* met de volgende verzenddatum. Klik op *Kopieer als tekst*.
    - Als er tijd over is: *Signalen* (bezorgdheden die enkel coördinatoren zien), *Velden beheren* (een nieuw veld verschijnt meteen in het formulier en de filters), *Export* (Excel of CSV) en het rss-icoon voor de agenda-feed.
 
 ## Wat zit erin
@@ -72,7 +72,7 @@ Naast het prototype bestaat er een **werkende testversie** op **https://tattoova
 
 - **Inloggen met een code per e-mail**, zonder wachtwoord. Wie op de toegangslijst staat, komt meteen binnen. Anderen vragen toegang aan en een coördinator keurt goed (*Dashboard → Toegang*).
 - **Iedereen ziet dezelfde gegevens, live bijgewerkt.**
-- **Echte e-mails**: bij een reactie of opmerking, bij een nieuwe toegangsaanvraag, en de digest via *Verstuur digest nu*.
+- **Echte e-mails**: bij een reactie of opmerking, bij een nieuwe toegangsaanvraag, en de digest via *Verstuur digest nu* of automatisch elke maand.
 - **Een echte, persoonlijke agenda-feed** voor Outlook en Google Agenda.
 - **Plak een link leest de webpagina echt.** Zonder AI worden de gestructureerde eventgegevens (schema.org), de metatags en Nederlandse datums in de tekst gebruikt. Met een AI-sleutel leest ook AI mee (zie *AI koppelen*). Kan een pagina niet gelezen worden (bv. een website die robots weigert), dan wordt enkel de titel uit de link afgeleid.
 - **Nog niet automatisch**: de kennismakingsmail bij Matches kopieer je en verstuur je zelf.
@@ -107,6 +107,11 @@ Je hebt een **API-sleutel** nodig. Een gewoon abonnement (Gemini Advanced, Claud
   - *Aanvragen* = wie inlogde maar niet op de lijst stond; jij keurt goed.
   - *Gebruikers* = iedereen die al een account heeft (minstens één keer ingelogd).
 - **Je naam wijzigen**: klik rechtsboven op je naam → *Naam wijzigen*. Ook je eerdere reacties tonen dan de nieuwe naam.
+- **De digest**: *Dashboard → Digest-preview*.
+  - In de aanspreking wordt `[voornaam]` per ontvanger vervangen door de voornaam. Haal je het weg (bv. “Dag allemaal,”), dan krijgt iedereen die tekst.
+  - *Elke maand automatisch versturen*: op de eerste werkdag van de maand rond 8 uur, met het automatische overzicht (niet met aanpassingen uit de editor). Werkdag = maandag tot vrijdag, zonder 1 januari, 1 mei en 1 november.
+  - Ging er in de week ervoor of die maand al een digest weg, dan wordt die maand overgeslagen. Lukt het niet op de eerste werkdag, dan probeert het systeem elk uur opnieuw, tot en met de 7de.
+  - Een gepauzeerd Supabase-project verstuurt niets. Hou het project actief, of kies voor een betaald plan.
 - **Mail in Gmail bij ‘Reclame’?** Sleep hem naar *Primair* en kies “Ja” voor toekomstige berichten. Brevo voegt altijd een volgpixel toe; op lange termijn helpt een eigen domein (zie hieronder).
 - **Na de test**: verwijder de testgebruikers in Supabase → *Authentication → Users*, of verwijder het hele project.
 
@@ -120,18 +125,21 @@ Je hebt een **API-sleutel** nodig. Een gewoon abonnement (Gemini Advanced, Claud
 - [ ] Testdata en testaccounts wissen (bv. het moment “Testevent” en `+proveg`-adressen).
 - [ ] Enya en Kristof als coördinator op de toegangslijst; eventueel jezelf daarna als gewone partner.
 - [ ] Beslissen over privacyverklaring, toegankelijkheidscheck en een AI-sleutel voor “Plak een link”.
+- [ ] Automatische digest: aan of uit? Het gratis project pauzeert na een week zonder gebruik, en dan vertrekt er niets. Kies voor een vaste verzending eventueel het betaalde plan van Supabase.
 
 ### Voor een ontwikkelaar
 
 ```bash
 npm run test:db           # alle toegangsregels testen in een lokale Postgres (PGlite)
 npm run test:extract      # de paginalezer van "Plak een link" testen
+npm run test:digest       # digest: planning van de automatische verzending, aanspreking, geen dubbele momenten
 npm run dev:live          # ontwikkelserver tegen de echte database (.env.live nodig)
 npm run functions:deploy  # e-mail-, digest- en feedfuncties naar Supabase
 npm run deploy:site       # live-versie bouwen en op GitHub Pages zetten
 ```
 
 - `supabase/migrations/`: tabellen, toegangsregels (Row Level Security), triggers voor meldingen, seed met de 25 momenten (`npm run seed:sql` maakt die opnieuw uit `src/seed.ts`).
+- De automatische digest: een pg_cron-taak `eiwitshift-digest` draait elk uur op dag 1 tot 7. Ze roept `digest` aan met `{"auto": true}` wanneer `digest_settings.auto_send` aanstaat; de regel zelf staat in `src/lib/digestSchedule.ts`. Elke verzending komt in `digest_runs`.
 - `supabase/functions/`: `notify` (meldingen mailen), `digest` (digest versturen), `feed` (agenda-feed) en `read-link` (Plak een link: pagina ophalen, lezen, optioneel AI via `_shared/ai.ts`). Ze hergebruiken de e-mail- en ICS-code uit `src/lib/` via `scripts/sync-shared.mjs`.
 - `supabase/templates/login-code.html`: het e-mailsjabloon voor de inlogcode.
 - `.env.live`: `VITE_SUPABASE_URL` en `VITE_SUPABASE_ANON_KEY` van het project.
