@@ -11,6 +11,26 @@ export interface EmailItem {
   title: string;
   meta: string;
   note?: string;
+  /** The organiser is looking for partners: shown as a label next to the title. */
+  seeking?: boolean;
+}
+
+/** Label next to the title of a moment that looks for partners (an emoji, because mail clients drop SVG icons). */
+export const SEEKING_LABEL = '🤝 Zoekt partners';
+
+/** Replaced by each recipient's first name in the greeting. */
+export const NAME_PLACEHOLDER = '[voornaam]';
+
+/** "Dag [voornaam]," → "Dag Lucas,", or "Dag," when there is no name. */
+export function fillGreeting(greeting: string, name?: string | null): string {
+  const first = (name ?? '').trim().split(/\s+/)[0];
+  if (first) return greeting.split(NAME_PLACEHOLDER).join(first);
+  return greeting
+    .split(NAME_PLACEHOLDER)
+    .join('')
+    .replace(/ +([,.!?])/g, '$1')
+    .replace(/ {2,}/g, ' ')
+    .trim();
 }
 
 export interface EmailSection {
@@ -42,6 +62,12 @@ export interface NotificationExtra {
 
 function momentItem(m: Moment, note?: string): EmailItem {
   return { title: m.title, meta: `${whenLabel(m)} · ${m.type} · ${organiserLabel(m)}`, note };
+}
+
+/** A moment in the digest; one that looks for partners gets the label and its question as note. */
+function digestItem(m: Moment): EmailItem {
+  const need = m.need?.trim();
+  return need ? { ...momentItem(m, `Zoekt: ${need}`), seeking: true } : momentItem(m);
 }
 
 export function notificationTitle(n: AppNotification, m: Moment | undefined): string {
@@ -140,6 +166,9 @@ export function digestEmail(state: AppState, today = todayISO()): Email {
     .sort(byStart);
 
   const seeking = live.filter((m) => m.need?.trim()).sort(byStart);
+  // Moments that look for partners are marked in the first list; the others (later or ongoing) get a short list of their own.
+  const upcomingIds = new Set(upcoming.map((m) => m.id));
+  const seekingLater = seeking.filter((m) => !upcomingIds.has(m.id));
 
   const popular = live
     .map((m) => ({ m, n: reactionCount(m.id) }))
@@ -169,7 +198,7 @@ export function digestEmail(state: AppState, today = todayISO()): Email {
     from: SENDER,
     to: 'Alle partners van de Green Deal Eiwitshift',
     subject,
-    greeting: 'Dag partner,',
+    greeting: `Dag ${NAME_PLACEHOLDER},`,
     sections: [
       {
         paragraphs: [
@@ -178,14 +207,10 @@ export function digestEmail(state: AppState, today = todayISO()): Email {
       },
       {
         heading: 'Komende 2 maanden',
-        items: upcoming.map((m) => momentItem(m)),
+        items: upcoming.map(digestItem),
         empty: 'Nog geen momenten gepland in de komende 2 maanden.',
       },
-      {
-        heading: 'Zoekt partners',
-        items: seeking.map((m) => momentItem(m, m.need)),
-        empty: 'Op dit moment zoekt niemand expliciet partners.',
-      },
+      ...(seekingLater.length ? [{ heading: 'Zoekt ook partners (later of doorlopend)', items: seekingLater.map(digestItem) }] : []),
       {
         heading: 'Populairste momenten',
         items: popular.map(({ m, n }) => momentItem(m, `${n} ${n === 1 ? 'partner haakt' : 'partners haken'} aan of verspreiden mee`)),
@@ -231,25 +256,23 @@ export function introEmail(m: Moment, orgs: string[]): Email {
 
 export interface DigestEdits {
   subject: string;
-  /** The first paragraph ("Hier is je maandelijkse overzicht …"). */
+  /** "Dag [voornaam]," — the placeholder becomes each recipient's first name. */
+  greeting: string;
+  /** The opening paragraphs ("Hier is je maandelijkse overzicht …"). */
   intro: string;
-  /** Optional own message, shown as a separate block after the intro. */
-  message: string;
   /** Paragraph text of the "Vul de agenda aan" section. */
   closing: string;
   /** Items left out, as "sectionIndex:itemIndex". */
   excluded: string[];
 }
 
-export const DIGEST_MESSAGE_HEADING = 'Bericht van de coördinatoren';
-
 /** Start values for the editor, taken from the automatic digest. */
 export function digestEditsFrom(base: Email): DigestEdits {
   const closing = base.sections.find((s) => s.heading === 'Vul de agenda aan');
   return {
     subject: base.subject,
+    greeting: base.greeting,
     intro: (base.sections[0]?.paragraphs ?? []).join(PARAGRAPH_BREAK),
-    message: '',
     closing: (closing?.paragraphs ?? []).join(PARAGRAPH_BREAK),
     excluded: [],
   };
@@ -273,19 +296,18 @@ export function applyDigestEdits(base: Email, edits: DigestEdits): Email {
     if (s.items) return { ...s, items: s.items.filter((_, ii) => !excluded.has(`${si}:${ii}`)) };
     return s;
   });
-  const message = paragraphs(edits.message);
-  if (message.length) sections.splice(1, 0, { heading: DIGEST_MESSAGE_HEADING, paragraphs: message });
-  return { ...base, subject: edits.subject.trim() || base.subject, sections };
+  return { ...base, subject: edits.subject.trim() || base.subject, greeting: edits.greeting.trim() || base.greeting, sections };
 }
 
 const cap = (v: unknown, max: number): string => (typeof v === 'string' ? v.slice(0, max) : '');
 
 /** Server-side check of an edited e-mail sent by the browser: shape and lengths only. */
-export function sanitizeEmail(input: unknown): Pick<Email, 'subject' | 'sections'> | null {
+export function sanitizeEmail(input: unknown): Pick<Email, 'subject' | 'greeting' | 'sections'> | null {
   if (!input || typeof input !== 'object') return null;
   const o = input as Record<string, unknown>;
   const subject = cap(o.subject, 200).trim();
   if (!subject || !Array.isArray(o.sections)) return null;
+  const greeting = cap(o.greeting, 200).trim() || `Dag ${NAME_PLACEHOLDER},`;
   const sections: EmailSection[] = o.sections.slice(0, 12).map((raw) => {
     const s = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
     const section: EmailSection = {};
@@ -294,13 +316,18 @@ export function sanitizeEmail(input: unknown): Pick<Email, 'subject' | 'sections
     if (Array.isArray(s.items)) {
       section.items = s.items.slice(0, 100).map((it) => {
         const i = (it && typeof it === 'object' ? it : {}) as Record<string, unknown>;
-        return { title: cap(i.title, 300), meta: cap(i.meta, 300), ...(i.note ? { note: cap(i.note, 600) } : {}) };
+        return {
+          title: cap(i.title, 300),
+          meta: cap(i.meta, 300),
+          ...(i.note ? { note: cap(i.note, 600) } : {}),
+          ...(i.seeking === true ? { seeking: true } : {}),
+        };
       });
     }
     if (s.empty) section.empty = cap(s.empty, 300);
     return section;
   });
-  return { subject, sections };
+  return { subject, greeting, sections };
 }
 
 /** Plain-text version. `withHeaders` adds subject/from/to lines (for "kopieer als tekst"). */
@@ -313,7 +340,7 @@ export function emailToText(e: Email, withHeaders = true): string {
     if (s.items) {
       if (!s.items.length && s.empty) out.push(s.empty, '');
       for (const it of s.items) {
-        out.push(`• ${it.title}`, `  ${it.meta}`);
+        out.push(`• ${it.title}${it.seeking ? `  (${SEEKING_LABEL})` : ''}`, `  ${it.meta}`);
         if (it.note) out.push(`  → ${it.note}`);
       }
       if (s.items.length) out.push('');

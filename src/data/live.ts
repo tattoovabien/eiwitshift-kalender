@@ -42,9 +42,9 @@ export function emptyState(): AppState {
   return { version: STATE_VERSION, role: 'anon', moments: [], reactions: [], comments: [], signals: [], notifications: [], fieldDefs: [] };
 }
 
-/** Everything a logged-in partner may see. Signals only come back for coordinators. */
+/** Everything a logged-in partner may see. Signals and the digest setting only come back for coordinators. */
 export async function fetchAll(isCoordinator: boolean): Promise<AppState> {
-  const [moments, reactions, comments, signals, notifications, fieldDefs] = await Promise.all([
+  const [moments, reactions, comments, signals, notifications, fieldDefs, digest] = await Promise.all([
     sb().from('moments').select('*'),
     sb().from('reactions').select('*').order('created_at'),
     sb().from('comments').select('*').order('created_at'),
@@ -53,8 +53,10 @@ export async function fetchAll(isCoordinator: boolean): Promise<AppState> {
       : Promise.resolve({ data: [], error: null }),
     sb().from('notifications').select('*').order('created_at', { ascending: false }).limit(300),
     sb().from('field_defs').select('*').order('created_at'),
+    isCoordinator ? sb().from('digest_settings').select('auto_send').maybeSingle() : Promise.resolve({ data: null, error: null }),
   ]);
   return {
+    digestAuto: must<{ auto_send: boolean } | null>(digest)?.auto_send ?? false,
     ...emptyState(),
     moments: must<Record<string, unknown>[]>(moments).map(momentFromRow),
     reactions: must<Record<string, unknown>[]>(reactions).map(reactionFromRow),
@@ -168,6 +170,9 @@ export async function applyRemote(action: Action, prev: AppState): Promise<void>
     case 'removeField':
       must(await sb().rpc('remove_field', { field_id: action.id }));
       return;
+    case 'setDigestAuto':
+      mustChange(await sb().from('digest_settings').update({ auto_send: action.on }).eq('id', true).select('id'));
+      return;
     case 'setRole':
     case 'reset':
       return; // demo-only actions
@@ -252,10 +257,36 @@ export async function readLinkRemote(url: string): Promise<ReadLinkResponse> {
 }
 
 /** Sends the digest (with the coordinator's edits) to every active user now (edge function, coordinators only). */
-export async function sendDigestNow(email?: Pick<Email, 'subject' | 'sections'>): Promise<number> {
+export async function sendDigestNow(email?: Pick<Email, 'subject' | 'greeting' | 'sections'>): Promise<number> {
   const { data, error } = await sb().functions.invoke('digest', {
-    body: email ? { email: { subject: email.subject, sections: email.sections } } : {},
+    body: email ? { email: { subject: email.subject, greeting: email.greeting, sections: email.sections } } : {},
   });
   if (error) throw new Error(error.message);
   return (data as { sent: number }).sent;
+}
+
+export interface DigestRun {
+  kind: 'auto' | 'manual';
+  sentByName: string | null;
+  recipients: number | null;
+  createdAt: string;
+}
+
+/** The most recent digest that went out (coordinators only), or null. */
+export async function fetchLastDigest(): Promise<DigestRun | null> {
+  const res = await sb()
+    .from('digest_runs')
+    .select('kind, sent_by_name, recipients, created_at')
+    .not('recipients', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const row = must<Record<string, unknown> | null>(res);
+  if (!row) return null;
+  return {
+    kind: row.kind as DigestRun['kind'],
+    sentByName: (row.sent_by_name as string | null) ?? null,
+    recipients: (row.recipients as number | null) ?? null,
+    createdAt: row.created_at as string,
+  };
 }

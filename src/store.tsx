@@ -46,7 +46,8 @@ export type Action =
   | { type: 'markAllRead'; role: Role }
   | { type: 'addField'; def: FieldDef }
   | { type: 'updateField'; def: FieldDef }
-  | { type: 'removeField'; id: string };
+  | { type: 'removeField'; id: string }
+  | { type: 'setDigestAuto'; on: boolean };
 
 function notify(
   state: AppState,
@@ -256,6 +257,9 @@ export function reducer(state: AppState, action: Action): AppState {
           return { ...m, customFields };
         }),
       };
+
+    case 'setDigestAuto':
+      return { ...state, digestAuto: action.on };
   }
 }
 

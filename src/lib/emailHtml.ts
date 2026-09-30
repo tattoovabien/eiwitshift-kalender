@@ -1,6 +1,6 @@
 // Turns an Email (see emails.ts) into simple, inline-styled HTML for real sending.
 // Looks like the in-app EmailPreview. Also used by the edge functions.
-import type { Email } from './emails';
+import { SEEKING_LABEL, type Email } from './emails';
 
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -22,7 +22,11 @@ export function emailToHtml(e: Email): string {
         for (const it of s.items) {
           parts.push(
             `<div style="margin:0 0 8px;padding:8px 12px;background:#f9fafb;border-radius:6px">` +
-              `<div style="font-weight:600;color:#111827">${esc(it.title)}</div>` +
+              `<div style="font-weight:600;color:#111827">${esc(it.title)}` +
+              (it.seeking
+                ? ` <span style="display:inline-block;margin-left:4px;padding:1px 8px;border-radius:6px;background:#fffbeb;border:1px solid #fde68a;color:#78350f;font-size:12px;font-weight:600;white-space:nowrap">${esc(SEEKING_LABEL)}</span>`
+                : '') +
+              `</div>` +
               `<div style="font-size:14px;color:#4b5563">${esc(it.meta)}</div>` +
               (it.note ? `<div style="font-size:14px;color:#0e573a">→ ${esc(it.note)}</div>` : '') +
               `</div>`,

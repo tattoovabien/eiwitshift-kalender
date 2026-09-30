@@ -30,6 +30,12 @@ const STUBS = `
   create function net.http_post(url text, body jsonb default '{}', params jsonb default '{}',
     headers jsonb default '{}', timeout_milliseconds int default 5000) returns bigint language sql as
     $$ insert into net.calls (url, body) values (url, body) returning id::bigint $$;
+  create schema cron;
+  create table cron.job (jobid serial primary key, jobname text unique, schedule text, command text);
+  create function cron.schedule(job_name text, schedule text, command text) returns bigint language sql as
+    $$ insert into cron.job (jobname, schedule, command) values (job_name, schedule, command)
+       on conflict (jobname) do update set schedule = excluded.schedule, command = excluded.command
+       returning jobid::bigint $$;
 `;
 
 const GRANTS = `
@@ -70,7 +76,7 @@ async function main() {
   await exec(STUBS);
   for (const f of readdirSync('supabase/migrations').sort()) {
     let sql = readFileSync(`supabase/migrations/${f}`, 'utf8');
-    sql = sql.replace(/create extension if not exists pg_net;/i, '');
+    sql = sql.replace(/create extension if not exists pg_net;/i, '').replace(/create extension if not exists pg_cron[^;]*;/i, '');
     await exec(sql);
   }
   await exec(GRANTS);
@@ -269,6 +275,42 @@ async function main() {
   r = await as(lidl, `update public.profiles set name = 'Nieuwe Naam' where user_id = '${lidl}'`);
   rn = await admin<{ name: string }>(`select name from public.reactions where created_by = '${lidl}'`);
   check('name change updates my reactions', r.affected === 1 && rn.length > 0 && rn.every((x) => x.name === 'Nieuwe Naam'), rn);
+
+  // --- monthly digest: the setting, the log and the hourly job
+  const job = await admin<{ schedule: string; command: string }>(`select schedule, command from cron.job where jobname = 'eiwitshift-digest'`);
+  check('cron job for the automatic digest', job.length === 1 && job[0].command.includes('private.run_auto_digest'), job);
+  let ds = await as(enya, 'select auto_send from public.digest_settings');
+  check('digest setting exists and is off', ds.rows.length === 1 && ds.rows[0].auto_send === false, ds);
+  ds = await as(proveg, 'select * from public.digest_settings');
+  check('partner cannot read the digest setting', ds.rows.length === 0 && !ds.error, ds);
+  r = await as(proveg, 'update public.digest_settings set auto_send = true');
+  check('partner cannot switch the automatic digest on', r.affected === 0, r);
+  const digestCalls = async () =>
+    (await admin<{ n: number }>(`select count(*)::int as n from net.calls where url = 'https://test.supabase.co/functions/v1/digest'`))[0].n;
+  await admin('select private.run_auto_digest()');
+  check('job does not call the digest function while switched off', (await digestCalls()) === 0);
+  r = await as(enya, 'update public.digest_settings set auto_send = true');
+  const setting = await admin<{ auto_send: boolean; updated_by: string }>('select auto_send, updated_by from public.digest_settings');
+  check('coordinator switches the automatic digest on', r.affected === 1 && setting[0].auto_send && setting[0].updated_by === enya, setting);
+  await admin('select private.run_auto_digest()');
+  const body = await admin<{ body: { auto?: boolean } }>(`select body from net.calls where url like '%/digest' order by id desc limit 1`);
+  check('job calls the digest function when switched on', (await digestCalls()) === 1 && body[0]?.body.auto === true, body);
+  await admin(`insert into public.digest_runs (kind, period, recipients) values ('auto', to_char(now() at time zone 'Europe/Brussels', 'YYYY-MM'), 3)`);
+  await admin('select private.run_auto_digest()');
+  check('no call once this month’s automatic digest went out', (await digestCalls()) === 1);
+  let twice: string | null = null;
+  try {
+    await admin(`insert into public.digest_runs (kind, period) values ('auto', to_char(now() at time zone 'Europe/Brussels', 'YYYY-MM'))`);
+  } catch (e) {
+    twice = (e as Error).message;
+  }
+  check('at most one automatic digest per month', !!twice && /unique|duplicate/i.test(twice), twice);
+  r = await as(proveg, 'select * from public.digest_runs');
+  check('partner cannot read the digest log', r.rows.length === 0 && !r.error, r);
+  r = await as(enya, 'select * from public.digest_runs');
+  check('coordinator reads the digest log', r.rows.length === 1, r);
+  r = await as(enya, `insert into public.digest_runs (kind, recipients) values ('manual', 99)`);
+  check('digest log cannot be written through the API', !!r.error, r);
 
   // --- blocked user
   await as(enya, `update public.profiles set status = 'blocked' where user_id = '${lidl}'`);

@@ -1,5 +1,14 @@
 import { Leaf } from 'lucide-react';
-import type { Email } from '../lib/emails';
+import { SEEKING_LABEL, type Email } from '../lib/emails';
+
+/** "🤝 Zoekt partners", as in the real e-mail. */
+export function SeekingLabel() {
+  return (
+    <span className="ml-1.5 inline-block rounded-md bg-amber-50 px-2 py-px align-middle text-xs font-semibold whitespace-nowrap text-amber-900 ring-1 ring-amber-200 ring-inset">
+      {SEEKING_LABEL}
+    </span>
+  );
+}
 
 /** Renders a simulated e-mail inside a mail-client-like frame. */
 export function EmailPreview({ email }: { email: Email }) {
@@ -31,7 +40,10 @@ export function EmailPreview({ email }: { email: Email }) {
                   <ul className="space-y-2.5">
                     {s.items.map((it, j) => (
                       <li key={j} className="rounded-md bg-gray-50 px-3 py-2">
-                        <div className="font-semibold text-gray-900">{it.title}</div>
+                        <div className="font-semibold text-gray-900">
+                          {it.title}
+                          {it.seeking && <SeekingLabel />}
+                        </div>
                         <div className="text-sm text-gray-600">{it.meta}</div>
                         {it.note && <div className="mt-0.5 text-sm text-brand-800">→ {it.note}</div>}
                       </li>

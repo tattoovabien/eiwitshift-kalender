@@ -2,7 +2,7 @@
 // E-mails it to every active user of the receiving organisation (or to all coordinators).
 // No login needed to call it, but it only sends notifications that exist and were not sent yet.
 import { adminClient, APP_URL, json, personalise, sendMail } from '../_shared/common.ts';
-import { notificationEmail } from '../_shared/app/lib/emails.ts';
+import { NAME_PLACEHOLDER, notificationEmail } from '../_shared/app/lib/emails.ts';
 import { momentFromRow, notificationFromRow } from '../_shared/app/data/mappers.ts';
 
 Deno.serve(async (req) => {
@@ -41,6 +41,7 @@ Deno.serve(async (req) => {
       : undefined;
 
   const email = notificationEmail(notificationFromRow(n), moment ? momentFromRow(moment) : undefined, { signalNote });
+  email.greeting = `Dag ${NAME_PLACEHOLDER},`; // personal greeting per recipient
   email.ctaUrl =
     n.kind === 'access_request'
       ? `${APP_URL}#/dashboard/toegang`

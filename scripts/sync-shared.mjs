@@ -11,6 +11,7 @@ const FILES = [
   'lib/moments.ts',
   'lib/emails.ts',
   'lib/emailHtml.ts',
+  'lib/digestSchedule.ts',
   'lib/prefill.ts',
   'lib/pageExtract.ts',
   'lib/ics.ts',

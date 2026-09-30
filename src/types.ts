@@ -178,4 +178,6 @@ export interface AppState {
   signals: Signal[];
   notifications: AppNotification[];
   fieldDefs: FieldDef[];
+  /** Coordinators chose to send the digest automatically every month. */
+  digestAuto?: boolean;
 }

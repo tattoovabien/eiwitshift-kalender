@@ -239,13 +239,6 @@ export default function App() {
         {main}
       </main>
 
-      <footer className="border-t border-gray-200 bg-gray-50">
-        <div className="mx-auto max-w-7xl px-4 py-5 text-sm text-gray-600">
-          Prototype van een gedeelde communicatiekalender voor de partners van de Green Deal Eiwitshift. Alle gegevens zijn
-          demodata en blijven in deze browser; er wordt niets verstuurd.
-        </div>
-      </footer>
-
       <NotificationsPanel
         open={notifOpen}
         onClose={() => setNotifOpen(false)}

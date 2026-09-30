@@ -2,7 +2,7 @@
 // sending e-mail through Brevo, and small response helpers.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import type { Email } from './app/lib/emails.ts';
-import { emailToText } from './app/lib/emails.ts';
+import { emailToText, fillGreeting } from './app/lib/emails.ts';
 import { emailToHtml } from './app/lib/emailHtml.ts';
 
 /** The public web address of the calendar (for links in e-mails). */
@@ -47,10 +47,9 @@ export interface Recipient {
   name?: string | null;
 }
 
-/** Same e-mail, with the recipient's first name in the greeting. */
+/** Same e-mail, with "[voornaam]" in the greeting replaced by the recipient's first name. */
 export function personalise(email: Email, to: Recipient): Email {
-  const first = (to.name ?? '').trim().split(/\s+/)[0];
-  return { ...email, greeting: first ? `Dag ${first},` : 'Dag,' };
+  return { ...email, greeting: fillGreeting(email.greeting, to.name) };
 }
 
 export async function sendMail(to: Recipient, email: Email): Promise<void> {

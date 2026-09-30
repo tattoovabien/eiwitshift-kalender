@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  CalendarClock,
   CalendarDays,
   Check,
   Copy,
@@ -20,20 +21,22 @@ import {
 import type { FieldDef, FieldType, Moment } from '../types';
 import { newId, REACTION_LABEL, useStore } from '../store';
 import { isPast, organiserLabel, whenLabel } from '../lib/moments';
-import { fmtRelative, todayISO } from '../lib/dates';
+import { fmtLongDate, fmtRelative, todayISO } from '../lib/dates';
 import {
   applyDigestEdits,
   digestEditsFrom,
   digestEmail,
-  DIGEST_MESSAGE_HEADING,
   emailToText,
+  fillGreeting,
   introEmail,
+  NAME_PLACEHOLDER,
   type DigestEdits,
 } from '../lib/emails';
+import { AUTO_DIGEST_HOUR, brusselsNow, nextAutoDigest } from '../lib/digestSchedule';
 import { buildCsv, buildIcs, buildMomentsXlsx, copyText, downloadFile } from '../lib/files';
-import { EmailPreview } from './EmailPreview';
+import { EmailPreview, SeekingLabel } from './EmailPreview';
 import { AccessManager } from './AccessManager';
-import { sendDigestNow } from '../data/live';
+import { fetchLastDigest, sendDigestNow, type DigestRun } from '../data/live';
 import { Modal, SimNote, Switch, TypeBadge, useToast } from './ui';
 
 export type DashTab = 'matches' | 'signalen' | 'velden' | 'digest' | 'export' | 'toegang';
@@ -504,6 +507,51 @@ function FieldRow({ f, onDelete }: { f: FieldDef; onDelete: () => void }) {
 
 // ---------------------------------------------------------------------------
 
+function AutoDigest({ lastRun }: { lastRun: DigestRun | null }) {
+  const { state, dispatch, live } = useStore();
+  const toast = useToast();
+  const on = !!state.digestAuto;
+  const now = brusselsNow();
+  const lastSent = lastRun ? brusselsNow(new Date(lastRun.createdAt)).date : null;
+  const next = nextAutoDigest(now, lastSent);
+  const nextLabel = next === now.date ? 'vandaag, binnen het uur' : `${fmtLongDate(next)}, rond ${AUTO_DIGEST_HOUR} uur`;
+
+  return (
+    <div className="card max-w-3xl p-4">
+      <Switch
+        checked={on}
+        onChange={(v) => {
+          dispatch({ type: 'setDigestAuto', on: v });
+          toast(v ? `Automatisch versturen staat aan. Volgende verzending: ${nextLabel}.` : 'Automatisch versturen staat uit', v ? 'success' : 'info');
+        }}
+        label={<span className="font-semibold text-gray-900">Elke maand automatisch versturen</span>}
+      />
+      <p className="text-sm text-gray-700">
+        Op de eerste werkdag van de maand rond {AUTO_DIGEST_HOUR} uur, met het automatische overzicht (zonder je aanpassingen
+        hieronder). Ging er in de week ervoor of die maand al een digest weg, dan wordt die maand overgeslagen.
+      </p>
+      {on && (
+        <p className="mt-2 flex items-start gap-2 text-sm font-semibold text-brand-800">
+          <CalendarClock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          Volgende verzending: {nextLabel}.
+        </p>
+      )}
+      {lastRun && (
+        <p className="mt-1 text-sm text-gray-600">
+          Laatst verstuurd: {fmtLongDate(lastSent!)}
+          {lastRun.kind === 'auto' ? ', automatisch' : lastRun.sentByName ? `, door ${lastRun.sentByName}` : ''}
+          {lastRun.recipients !== null && `, naar ${lastRun.recipients} ${lastRun.recipients === 1 ? 'persoon' : 'personen'}`}.
+        </p>
+      )}
+      {!live && (
+        <div className="mt-2">
+          <SimNote>In het prototype vertrekt er niets. De schakelaar toont hoe het in de echte versie werkt.</SimNote>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Digest() {
   const { state, live } = useStore();
   const toast = useToast();
@@ -511,9 +559,18 @@ function Digest() {
   const [base, setBase] = useState(() => digestEmail(state));
   const [edits, setEdits] = useState<DigestEdits>(() => digestEditsFrom(base));
   const email = useMemo(() => applyDigestEdits(base, edits), [base, edits]);
+  // What one recipient sees: live with your own first name, in the prototype "partner". The server fills in each name.
+  const previewName = live ? live.profile?.name : 'partner';
+  const shown = useMemo(() => ({ ...email, greeting: fillGreeting(email.greeting, previewName) }), [email, previewName]);
   const [copied, setCopied] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [sending, setSending] = useState(false);
+  const [lastRun, setLastRun] = useState<DigestRun | null>(null);
+  const isLive = !!live;
+  const loadLastRun = useCallback(() => {
+    if (__LIVE__ && isLive) fetchLastDigest().then(setLastRun, () => undefined);
+  }, [isLive]);
+  useEffect(loadLastRun, [loadLastRun]);
 
   const setField = <K extends keyof DigestEdits>(k: K, v: DigestEdits[K]) => setEdits((e) => ({ ...e, [k]: v }));
   const toggleItem = (key: string) =>
@@ -531,6 +588,7 @@ function Digest() {
       const n = __LIVE__ ? await sendDigestNow(email) : 0;
       toast(`Digest verstuurd naar ${n} ${n === 1 ? 'persoon' : 'personen'}`);
       setConfirm(false);
+      loadLastRun();
     } catch (e) {
       toast(`Versturen mislukt: ${(e as Error).message}`, 'warning');
     }
@@ -544,8 +602,9 @@ function Digest() {
       <p className="max-w-3xl text-gray-700">
         De maandelijkse ‘nudge’-mail aan alle partners, automatisch samengesteld uit de kalender. Pas hem gerust aan voor je hem
         verstuurt.
-        {!live && ' In de echte versie vertrekt die op de eerste werkdag van de maand.'}
       </p>
+
+      <AutoDigest lastRun={lastRun} />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
         {/* Editor */}
@@ -560,24 +619,21 @@ function Digest() {
             <input id="dg-subject" className="input" value={edits.subject} onChange={(e) => setField('subject', e.target.value)} />
           </div>
           <div>
+            <label htmlFor="dg-greeting" className="field-label">
+              Aanspreking
+            </label>
+            <input id="dg-greeting" className="input" value={edits.greeting} onChange={(e) => setField('greeting', e.target.value)} />
+            <p className="mt-1 text-xs text-gray-600">
+              {NAME_PLACEHOLDER} wordt per ontvanger vervangen door de voornaam
+              {live ? ' (in de preview zie je de jouwe)' : ''}. Haal je het weg, bv. ‘Dag allemaal,’, dan krijgt iedereen die tekst.
+            </p>
+          </div>
+          <div>
             <label htmlFor="dg-intro" className="field-label">
               Inleiding
             </label>
             <textarea id="dg-intro" className="input" rows={4} value={edits.intro} onChange={(e) => setField('intro', e.target.value)} />
-          </div>
-          <div>
-            <label htmlFor="dg-message" className="field-label">
-              Eigen bericht <span className="font-normal text-gray-600">(optioneel)</span>
-            </label>
-            <textarea
-              id="dg-message"
-              className="input"
-              rows={3}
-              value={edits.message}
-              onChange={(e) => setField('message', e.target.value)}
-              placeholder="bv. Nieuw: vanaf nu kan je ook … / Save the date: …"
-            />
-            <p className="mt-1 text-xs text-gray-600">Verschijnt als apart blok ‘{DIGEST_MESSAGE_HEADING}’. Een lege regel begint een nieuwe alinea.</p>
+            <p className="mt-1 text-xs text-gray-600">Een lege regel begint een nieuwe alinea.</p>
           </div>
 
           {itemSections.map(({ s, si }) => (
@@ -599,7 +655,10 @@ function Digest() {
                             onChange={() => toggleItem(key)}
                           />
                           <span className="min-w-0">
-                            <span className="block font-medium text-gray-900">{it.title}</span>
+                            <span className="block font-medium text-gray-900">
+                              {it.title}
+                              {it.seeking && <SeekingLabel />}
+                            </span>
                             <span className="block text-xs text-gray-600">{it.meta}</span>
                           </span>
                         </label>
@@ -636,7 +695,7 @@ function Digest() {
               type="button"
               className={live ? 'btn-secondary' : 'btn-primary'}
               onClick={async () => {
-                const ok = await copyText(emailToText(email));
+                const ok = await copyText(emailToText(shown));
                 setCopied(ok);
                 toast(ok ? 'Digest gekopieerd als tekst' : 'Kopiëren lukte niet', ok ? 'success' : 'warning');
                 if (ok) setTimeout(() => setCopied(false), 2000);
@@ -646,7 +705,7 @@ function Digest() {
               Kopieer als tekst
             </button>
           </div>
-          <EmailPreview email={email} />
+          <EmailPreview email={shown} />
           {!live && <SimNote>Niets wordt echt verstuurd. De inhoud verandert mee met wat er in de kalender staat.</SimNote>}
         </div>
       </div>
